@@ -5,6 +5,7 @@
   const name=$('mpName'), color=$('mpColor'), codeInput=$('mpRoom');
   let ws=null, self=null, users=[], chef=null, connected=false, joined=false, roomCode='', pending=null, editing=false, toastTimer;
   let unread=0;
+  let isLocal=false, localRoom=null, localCutTimer=null;
   let stealCursor=0;
   const isMobile=()=>matchMedia('(max-width:740px)').matches;
   const chatOpen=()=>document.body.classList.contains('mpChatOpen');
@@ -46,7 +47,7 @@
     const el=$('mpToast');el.textContent=msg;el.style.display='block';
     clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.style.display='none',3000);
   };
-  MP.send=obj=>{if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));};
+  MP.send=obj=>{if(isLocal){localAction(obj);return;}if(ws&&ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(obj));};
   const log=(who,msg)=>{
     const parent=$('mpMessages');const line=document.createElement('div');
     const title=document.createElement('b');title.textContent=who+'  ';
@@ -55,8 +56,8 @@
   };
   const store=()=>{name.value=name.value.trim().slice(0,14)||'손님';try{localStorage.setItem('sushi-name',name.value);localStorage.setItem('sushi-color',color.value)}catch{}};
   const roomLabel=()=>{
-    $('mpRoomCode').textContent=roomCode ? `방 ${roomCode}` : '방 미입장';
-    $('mpCopy').disabled=!joined;
+    $('mpRoomCode').textContent=isLocal?'오프라인 · 혼자':roomCode?`방 ${roomCode}`:'방 미입장';
+    $('mpCopy').disabled=!joined||isLocal;
   };
   const render=()=>{
     const wasChef=MP.isChef;
@@ -65,7 +66,7 @@
     MP.users=users;
     $('mpCount').textContent=users.length+'/8';
     $('mpDot').classList.toggle('ok',joined&&connected);
-    $('mpStatus').textContent=joined?'접속됨':connected?'방 선택':'연결 대기';
+    $('mpStatus').textContent=isLocal?'오프라인':joined?'접속됨':connected?'방 선택':'연결 대기';
     $('mpRoleText').textContent=MP.isChef?`셰프 · 준비 중 ${MP.stock}점 · 내 접시 ${MP.served}점`:`${chef?(users.find(u=>u.id===chef)?.name||'셰프')+' 조리 중':'셰프 자리 비어 있음'} · 내 접시 ${MP.served}점`;
     $('mpTake').style.display=joined&&MP.ready>0?'':'none';
     $('mpClaim').style.display=joined&&!chef?'':'none';
@@ -76,6 +77,9 @@
     const victims=users.filter(u=>u.id!==self && u.plate>0);
     $('mpSteal').style.display=MP.isChef&&victims.length?'':'none';
     $('mpSteal').disabled=!victims.length;
+    $('mpPraise').style.display=joined&&!!chef&&!MP.isChef?'':'none';
+    $('mpBoo').style.display=joined&&!!chef&&!MP.isChef?'':'none';
+    $('mpReactions').textContent=`👏 ${MP.cheer||0} · 😖 ${MP.boo||0}`;
 
     $('cut').disabled=!MP.isChef;
     $('auto').disabled=!MP.isChef;
@@ -118,7 +122,10 @@
     }
     if(m.type==='state'){
       if(m.room!==roomCode)return;
-      chef=m.chef;users=m.users;MP.stock=m.stock;MP.ready=m.served;MP.served=(users.find(u=>u.id===self)||{}).plate||0;MP.room=m.room;MP.cutState=m;
+      chef=m.chef;users=m.users;MP.stock=m.stock;MP.ready=m.served;
+      const me=users.find(u=>u.id===self)||{};
+      MP.served=me.plate||0;MP.plateCuts=Array.isArray(me.plateCuts)?me.plateCuts.slice():[];
+      MP.cheer=m.cheer||0;MP.boo=m.boo||0;MP.room=m.room;MP.cutState=m;
       render();
       if(typeof MP.onCutState==='function')MP.onCutState(m);
       if(typeof MP.reconcile==='function')MP.reconcile();
@@ -145,6 +152,14 @@
       return;
     }
     if(m.type==='chat'){log(m.name,m.message);if(typeof MP.showBubble==='function')MP.showBubble(m.id,m.message);if(m.id!==self)noteUnread();return;}
+    if(m.type==='reaction'){
+      const prefix=m.kind==='praise'?'👏':'😖';
+      log(`${prefix} ${m.name}`,m.message);
+      if(typeof MP.showBubble==='function')MP.showBubble(m.id,`${prefix} ${m.message}`);
+      if(m.id!==self)noteUnread();
+      if(self===m.chefId)MP.toast(m.kind==='praise'?'셰프 칭찬을 받았어!':'셰프에게 맛 혹평이 들어왔어!');
+      return;
+    }
     if(m.type==='steal-animation'){
       if(typeof MP.playSteal==='function')MP.playSteal(m);
       return;
@@ -170,6 +185,7 @@
     if(editing){store();MP.send({type:'profile',name:name.value,color:color.value});$('mpSetup').style.display='none';editing=false;return;}
     store();$('mpLobbyError').textContent='';
     pending={mode,code};
+    if(isLocal){MP.toast('멀티 방에 들어가려면 페이지를 새로고침해 줘.');return;}
     if(ws && ws.readyState===WebSocket.OPEN)return sendEntry();
     if(ws && ws.readyState===WebSocket.CONNECTING)return;
     const scheme=location.protocol==='https:'?'wss':'ws';
@@ -178,11 +194,90 @@
     ws.onmessage=onMessage;
     ws.onerror=()=>MP.toast('서버 연결을 확인해 주세요.');
     ws.onclose=()=>{
-      connected=false;joined=false;self=null;chef=null;roomCode='';users=[];MP.isChef=false;MP.users=[];MP.stock=0;MP.served=0;MP.ready=0;MP.wantDining=false;MP.cutState=null;
+      if(isLocal)return;
+      connected=false;joined=false;self=null;chef=null;roomCode='';users=[];MP.isChef=false;MP.users=[];MP.stock=0;MP.served=0;MP.plateCuts=[];MP.ready=0;MP.wantDining=false;MP.cutState=null;
       render();$('mpSetup').style.display='grid';$('mpLobbyError').textContent='연결이 끊어졌어요. 방 코드를 입력해 다시 입장해 주세요.';
       log('시스템','서버 연결이 종료되었어요.');
     };
   }
+  // Server-free solo mode. Reuses the same MP render hooks and cutting timeline.
+  // It never connects a WebSocket; file:// and hosted pages behave the same.
+  function offlineSync(){
+    if(!localRoom)return;
+    const r=localRoom;
+    const member={id:'solo',name:name.value,color:color.value,seat:0,
+      plate:r.plateCuts.length,plateCuts:r.plateCuts.slice(),eaten:r.eaten,stolen:0};
+    onMessage({data:JSON.stringify({type:'state',room:'오프라인',chef:'solo',stock:r.stockCuts.length,
+      served:0,revision:r.revision++,generation:r.generation,cuts:r.cuts.slice(),
+      cutting:r.cutting,totalCuts:r.totalCuts,eatenTotal:r.eaten,stolenTotal:0,
+      cheer:0,boo:0,users:[member]})});
+  }
+  function offlineServe(){
+    if(!localRoom||!localRoom.stockCuts.length)return;
+    localRoom.plateCuts.push(...localRoom.stockCuts);
+    localRoom.stockCuts=[];
+    offlineSync();
+    onMessage({data:JSON.stringify({type:'serve-ok'})});
+  }
+  function localAction(m){
+    const r=localRoom;if(!r)return;
+    if(m.type==='profile')return offlineSync();
+    if(m.type==='claim'||m.type==='release')return MP.toast('오프라인에서는 언제든 셰프처럼 썰고 먹을 수 있어.');
+    if(m.type==='chat'){
+      const message=String(m.message||'').trim().slice(0,160);
+      if(message)onMessage({data:JSON.stringify({type:'chat',id:'solo',name:name.value,message})});
+      return;
+    }
+    if(m.type==='slice'){
+      if(r.cutting)return MP.toast('칼질이 끝난 뒤 다시 썰어 줘.');
+      const remaining=3.2-r.progress;
+      if(remaining<.03)return MP.toast('참치를 다 썰었어. 새 참치 준비를 눌러 줘.');
+      if(r.stockCuts.length>=40)return MP.toast('회를 접시에 내놓거나 새 참치를 준비해 줘.');
+      const thickness=Math.min(remaining,Math.max(.12,Math.min(.45,Number(m.thickness)||.22)));
+      const speed=Math.max(.5,Math.min(2,Number(m.speed)||1));
+      const cut={id:++r.nextCut,xa:r.progress,xb:r.progress+thickness,speed,started:Date.now()};
+      r.cutting=cut;
+      onMessage({data:JSON.stringify({type:'cut-animation',cut})});offlineSync();
+      clearTimeout(localCutTimer);
+      localCutTimer=setTimeout(()=>{
+        if(!localRoom||r.cutting!==cut)return;
+        r.cuts.push(cut.xb-cut.xa);r.stockCuts.push(cut.xb-cut.xa);
+        r.progress=cut.xb;r.cutting=null;r.totalCuts++;offlineSync();
+      },Math.ceil(2150/speed));
+      return;
+    }
+    if(m.type==='serve'){
+      if(r.cutting)return MP.toast('칼질이 끝난 다음 접시에 담아 줘.');
+      offlineServe();return;
+    }
+    if(m.type==='reset'){
+      if(r.cutting)return MP.toast('칼질이 끝난 다음 새 참치를 준비해 줘.');
+      offlineServe();r.generation++;r.progress=0;r.cuts=[];
+      onMessage({data:JSON.stringify({type:'cut-reset',generation:r.generation})});
+      onMessage({data:JSON.stringify({type:'reset-ok'})});offlineSync();return;
+    }
+    if(m.type==='eat'){
+      if(!r.plateCuts.length)return MP.toast('내 접시에 회가 없어.');
+      const index=Number.isInteger(m.index)?Math.max(0,Math.min(r.plateCuts.length-1,m.index)):0;
+      r.plateCuts.splice(index,1);r.eaten++;offlineSync();return;
+    }
+    if(m.type==='react')return MP.toast('혼자 즐기는 중이야. 셰프 평가는 멀티에서 해 봐!');
+  }
+  function startSolo(){
+    store();
+    if(ws){try{ws.close()}catch{} ws=null;}
+    isLocal=true;MP.isLocal=true;connected=true;joined=true;pending=null;self='solo';
+    roomCode='오프라인';chef='solo';users=[];
+    localRoom={stockCuts:[],plateCuts:[],cuts:[],progress:0,generation:0,
+      nextCut:0,totalCuts:0,cutting:null,eaten:0,revision:0};
+    $('mpSetup').style.display='none';$('mpProfile').disabled=false;
+    $('mpLobbyControls').style.display='block';$('mpSaveProfile').style.display='none';
+    $('mpLobbyError').textContent='';
+    offlineSync();
+    log('시스템','오프라인 1인 모드로 입장했어. 서버 없이 썰고 먹을 수 있어.');
+  }
+  $('mpOffline').onclick=startSolo;
+
   $('mpCreate').onclick=()=>connectAndEnter('create','');
   $('mpJoin').onclick=()=>{
     // Use the same normalization as the server. Do not strip meaningful spaces.
@@ -220,9 +315,12 @@
     MP.send({type:'steal',target:target.id});
   };
   $('mpTake').onclick=()=>MP.send({type:'take'});
+  $('mpPraise').onclick=()=>MP.send({type:'react',kind:'praise'});
+  $('mpBoo').onclick=()=>MP.send({type:'react',kind:'boo'});
   $('mpSend').onsubmit=e=>{
     e.preventDefault();const input=$('mpInput'),message=input.value.trim();
     if(message)MP.send({type:'chat',message});input.value='';if(isMobile())showChat(false);
   };
   roomLabel();render();
+  if(location.protocol==='file:' || /(^|\/)offline\.html$/i.test(location.pathname))startSolo();
 })();
