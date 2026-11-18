@@ -38,19 +38,23 @@ function normalizeRoomCode(input) {
   if(typeof input !== 'string')return '';
   return input.trim().normalize('NFC').toUpperCase();
 }
-function newRoom(code=roomCode()) { const room={code, members:new Map(), chef:null, stock:0, ready:0, served:0, revision:0, cuts:[], progress:0, cutting:null, generation:0, nextCut:0, nextSeat:0}; rooms.set(room.code,room); return room; }
+function newRoom(code=roomCode()) { const room={code, members:new Map(), chef:null, stock:0, ready:0, served:0, revision:0, cuts:[], progress:0, cutting:null, generation:0, nextCut:0, nextSeat:0, totalCuts:0, eatenTotal:0, stolenTotal:0}; rooms.set(room.code,room); return room; }
 function members(room) { return [...room.members.values()]; }
 function snapshot(room) {
   return {type:'state', room:room.code, chef:room.chef, stock:room.stock, served:room.ready, revision:room.revision,
-    generation:room.generation, cuts:room.cuts, cutting:room.cutting,
-    users:members(room).map(u=>({id:u.id,name:u.name,color:u.color,eaten:u.eaten,plate:u.plate,seat:u.seat}))};
+    generation:room.generation, cuts:room.cuts, cutting:room.cutting, totalCuts:room.totalCuts, eatenTotal:room.eatenTotal, stolenTotal:room.stolenTotal,
+    users:members(room).map(u=>({id:u.id,name:u.name,color:u.color,eaten:u.eaten,stolen:u.stolen,plate:u.plate,seat:u.seat}))};
 }
 function sync(room) { room.revision++; each(room, snapshot(room)); }
 function broadcastNotice(room, message) { each(room,{type:'notice',message}); }
 function plateStock(room, chefName) {
   if(room.stock<1)return 0;
-  const amount=room.stock, guests=members(room).sort((a,b)=>a.seat-b.seat);
-  // Each diner has their own plate. Never make everyone interact with one shared platter.
+  const amount=room.stock;
+  const all=members(room).sort((a,b)=>a.seat-b.seat);
+  // With guests present, the chef serves only guests. Alone, the chef can dine as before.
+  const diners=all.filter(u=>u.id!==room.chef);
+  const guests=diners.length?diners:all;
+  // Each diner has their own plate; a cut is assigned to exactly one plate.
   for(let i=0;i<amount;i++){
     if(guests.length)guests[(room.nextSeat+i)%guests.length].plate++;
     else room.ready++;
@@ -66,6 +70,7 @@ function finishCut(room, id) {
   room.cuts.push(c.xb-c.xa);
   room.progress=c.xb;
   room.stock++;
+  room.totalCuts++;
   room.cutting=null;
   sync(room);
 }
@@ -114,7 +119,7 @@ function joinRoom(ws, m, create) {
   sync(room);
 }
 wss.on('connection', ws=>{
-  connections.set(ws,{id:crypto.randomUUID().slice(0,8),room:null,seat:null,name:'손님',color:'#b68c67',plate:0,eaten:0,lastCut:0,lastChat:0});
+  connections.set(ws,{id:crypto.randomUUID().slice(0,8),room:null,seat:null,name:'손님',color:'#b68c67',plate:0,eaten:0,stolen:0,lastSteal:0,lastCut:0,lastChat:0});
   ws.on('message',raw=>{
     let m;try {m=JSON.parse(raw.toString());}catch{return;}
     if(!m || typeof m.type!=='string')return;
@@ -184,9 +189,25 @@ wss.on('connection', ws=>{
       if(room.ready<1)return err(ws,'남아 있는 예비 참치가 없어요.');
       const n=Math.min(6,room.ready);room.ready-=n;u.plate+=n;sync(room);return;
     }
+    if(m.type==='steal'){
+      if(room.chef!==u.id)return err(ws,'셰프만 손님 회를 몰래 집어먹을 수 있어요.');
+      const now=Date.now();
+      if(now-u.lastSteal<1100)return err(ws,'너무 자주 집어먹으면 들켜요!');
+      const target=members(room).find(x=>x.id===m.target && x.id!==u.id);
+      if(!target)return err(ws,'같은 방에 있는 다른 손님을 선택해 주세요.');
+      if(target.plate<1)return err(ws,`${target.name}의 접시가 비었어요.`);
+      u.lastSteal=now;
+      target.plate--;
+      u.stolen++;room.stolenTotal++;
+      // No system announcement: observers may notice the animation or missing piece.
+      each(room,{type:'steal-animation',chefId:u.id,targetId:target.id,seat:target.seat});
+      send(ws,{type:'steal-ok',target:target.name,total:u.stolen});
+      sync(room);
+      return;
+    }
     if(m.type==='eat'){
       if(u.plate<=0) return err(ws,'내 접시에 남은 참치가 없어요.');
-      u.plate--;u.eaten++;
+      u.plate--;u.eaten++;room.eatenTotal++;
       sync(room);
       return;
     }

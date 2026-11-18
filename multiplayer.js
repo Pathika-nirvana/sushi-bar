@@ -4,6 +4,43 @@
   const $ = id => document.getElementById(id);
   const name=$('mpName'), color=$('mpColor'), codeInput=$('mpRoom');
   let ws=null, self=null, users=[], chef=null, connected=false, joined=false, roomCode='', pending=null, editing=false, toastTimer;
+  let unread=0;
+  let stealCursor=0;
+  const isMobile=()=>matchMedia('(max-width:740px)').matches;
+  const chatOpen=()=>document.body.classList.contains('mpChatOpen');
+  const showChat=(open, focusInput=false)=>{
+    document.body.classList.toggle('mpChatOpen',open);
+    $('mpChatToggle').setAttribute('aria-expanded',String(open));
+    if(open){unread=0;$('mpChatBadge').textContent='';$('mpChatToggle').classList.remove('hasUnread');
+      $('mpMessages').scrollTop=$('mpMessages').scrollHeight;
+      document.body.classList.remove('mpPeopleOpen');$('mpPeopleToggle').setAttribute('aria-expanded','false');
+      if(focusInput)$('mpInput').focus();
+    }else if(document.activeElement===$('mpInput'))$('mpInput').blur();
+  };
+  $('mpChatToggle').addEventListener('click',()=>showChat(!chatOpen(),false));
+  $('mpChatClose').addEventListener('click',()=>showChat(false));
+  $('mpPeopleToggle').addEventListener('click',()=>{
+    const next=!document.body.classList.contains('mpPeopleOpen');
+    document.body.classList.toggle('mpPeopleOpen',next);
+    $('mpPeopleToggle').setAttribute('aria-expanded',String(next));
+    if(next)showChat(false);
+  });
+  document.addEventListener('pointerdown',e=>{
+    if(!isMobile())return;
+    if(chatOpen()&&!e.target.closest('#mpChat, #mpChatToggle'))showChat(false);
+    if(document.body.classList.contains('mpPeopleOpen')&&!e.target.closest('#mpPeople, #mpPeopleToggle')){
+      document.body.classList.remove('mpPeopleOpen');$('mpPeopleToggle').setAttribute('aria-expanded','false');
+    }
+  },true);
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){showChat(false);document.body.classList.remove('mpPeopleOpen');$('mpPeopleToggle').setAttribute('aria-expanded','false');}});
+  const noteUnread=()=>{
+    if(!isMobile()||chatOpen())return;
+    unread=Math.min(99,unread+1);
+    $('mpChatBadge').textContent=unread>9?'9+':String(unread);
+    $('mpChatToggle').classList.add('hasUnread');
+  };
+  // Desktop stays open; mobile is compact by default.
+
   try {name.value=localStorage.getItem('sushi-name')||'손님';color.value=localStorage.getItem('sushi-color')||'#b68c67';}catch{}
   MP.toast=msg=>{
     const el=$('mpToast');el.textContent=msg;el.style.display='block';
@@ -36,6 +73,10 @@
     $('mpRelease').style.display=MP.isChef?'':'none';
     $('mpServe').style.display=MP.isChef?'':'none';
     $('mpServe').disabled=MP.stock===0;
+    const victims=users.filter(u=>u.id!==self && u.plate>0);
+    $('mpSteal').style.display=MP.isChef&&victims.length?'':'none';
+    $('mpSteal').disabled=!victims.length;
+
     $('cut').disabled=!MP.isChef;
     $('auto').disabled=!MP.isChef;
     $('rst').disabled=!MP.isChef;
@@ -54,6 +95,11 @@
       row.append(avatar,label);
       if(u.plate>0){const food=document.createElement('span');food.className='mpChef';food.textContent=`${u.plate}점`;row.append(food);}
       if(u.id===chef){const badge=document.createElement('span');badge.className='mpChef';badge.textContent='셰프';row.append(badge);}
+      if(MP.isChef && u.id!==self && u.plate>0){
+        const take=document.createElement('button');take.className='mpSneak';take.type='button';
+        take.textContent='몰래 한 점';take.title=`${u.name} 접시에서 회 한 점 몰래 집어먹기`;
+        take.onclick=()=>MP.send({type:'steal',target:u.id});row.append(take);
+      }
       list.append(row);
     });
     if(typeof MP.updateAvatars==='function')MP.updateAvatars(users,chef,self);
@@ -98,7 +144,15 @@
       MP.toast('새 참치를 준비했어. 접시에 낸 회는 그대로야.');
       return;
     }
-    if(m.type==='chat'){log(m.name,m.message);return;}
+    if(m.type==='chat'){log(m.name,m.message);if(typeof MP.showBubble==='function')MP.showBubble(m.id,m.message);if(m.id!==self)noteUnread();return;}
+    if(m.type==='steal-animation'){
+      if(typeof MP.playSteal==='function')MP.playSteal(m);
+      return;
+    }
+    if(m.type==='steal-ok'){
+      MP.toast(`쉿! ${m.target} 접시에서 참치 한 점 성공 (${m.total}점째)`);
+      return;
+    }
     if(m.type==='notice'){log('스시집',m.message);return;}
     if(m.type==='error'){
       if(typeof MP.onCutError==='function')MP.onCutError();
@@ -159,10 +213,16 @@
   $('mpClaim').onclick=()=>MP.send({type:'claim'});
   $('mpRelease').onclick=()=>MP.send({type:'release'});
   $('mpServe').onclick=()=>MP.send({type:'serve'});
+  $('mpSteal').onclick=()=>{
+    const victims=users.filter(u=>u.id!==self&&u.plate>0);
+    if(!victims.length)return MP.toast('몰래 집어먹을 손님 회가 없어.');
+    const target=victims[stealCursor++%victims.length];
+    MP.send({type:'steal',target:target.id});
+  };
   $('mpTake').onclick=()=>MP.send({type:'take'});
   $('mpSend').onsubmit=e=>{
     e.preventDefault();const input=$('mpInput'),message=input.value.trim();
-    if(message)MP.send({type:'chat',message});input.value='';
+    if(message)MP.send({type:'chat',message});input.value='';if(isMobile())showChat(false);
   };
   roomLabel();render();
 })();

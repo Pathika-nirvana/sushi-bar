@@ -77,13 +77,83 @@ body.dining #eatHud{display:flex}
 #mpSetup button.mpPrimary{background:#9d6442;border-color:#bc8a5c}
 #mpSetup #mpLobbyError{min-height:16px;margin:9px 0 0;color:#f0b4a7}
 @media(max-width:740px){#mpBar{max-width:calc(100vw - 16px);flex-wrap:wrap;justify-content:flex-end}#mpRoomCode{font-size:11px}#mpRole{top:75px;left:8px;max-width:calc(100vw - 150px)}#mpPeople{top:112px}}
+
+/* V5: 좁은 화면에서도 식사 조작을 우선하는 반응형 HUD */
+#mpChatToggle,#mpChatHeader{display:none}
+#mpChatBadge{display:none;min-width:17px;height:17px;padding:0 3px;border-radius:10px;background:#c57051;color:#fff;font-size:10px;line-height:17px;text-align:center;box-sizing:border-box}
+#mpChatToggle.hasUnread #mpChatBadge{display:inline-block}
+#mpPeopleToggle{border:0!important;background:transparent!important;color:inherit!important;white-space:nowrap}
+#mpRoleText{min-width:0}
+#mpSteal{background:rgba(75,57,46,.95)!important;border-color:rgba(236,192,151,.5)!important;color:#eac89c!important}
+.mpSneak{margin-left:auto!important;flex:0 0 auto;padding:4px 6px!important;font-size:10px!important;background:#3c2c23!important;color:#eac59a!important;border:1px solid #72544080!important;border-radius:7px!important}
+.mpUser .mpChef{margin-left:0}
+@media(max-width:740px){#mpSteal{display:none!important}}
+@media(max-width:740px){
+  :root{--safeTop:env(safe-area-inset-top,0px);--safeBottom:env(safe-area-inset-bottom,0px)}
+  #mpBar{box-sizing:border-box;top:calc(7px + var(--safeTop));left:8px;right:8px;width:auto;max-width:none;height:42px;padding:5px 8px;gap:5px;flex-wrap:nowrap;justify-content:space-between}
+  #mpBar button{flex:0 0 auto;font-size:11px;padding:6px 7px;min-height:30px;white-space:nowrap}
+  #mpBar .label,#mpBar .mpSep{display:none}
+  #mpRoomCode{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;letter-spacing:0}
+  #mpPeopleToggle{padding:4px!important;min-width:34px;font-size:12px!important}
+  #mpRole{box-sizing:border-box;top:calc(55px + var(--safeTop));left:8px;right:8px;transform:none;max-width:none;min-width:0;min-height:37px;padding:5px 7px;gap:5px;justify-content:space-between;white-space:nowrap}
+  #mpRoleText{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+  #mpRole button{flex:0 0 auto;padding:6px 8px;font-size:11px}
+  #mpPeople{display:none;box-sizing:border-box;right:8px;top:calc(100px + var(--safeTop));width:min(190px,calc(100vw - 20px));padding:8px;max-height:min(32dvh,270px);z-index:40}
+  body.mpPeopleOpen #mpPeople{display:block}
+  #mpChatToggle{display:inline-flex;position:fixed;top:calc(100px + var(--safeTop));left:8px;z-index:37;align-items:center;justify-content:center;gap:7px;min-height:37px;padding:7px 11px;border:1px solid #ffffff30;border-radius:10px;box-shadow:0 3px 14px #0003;background:#2a211bce;backdrop-filter:blur(13px);color:#f0e5d5;font-size:12px;touch-action:manipulation}
+  body.mpChatOpen #mpChatToggle{background:#81583f}
+  #mpChat{display:none;box-sizing:border-box;position:fixed;top:calc(145px + var(--safeTop));left:8px;right:auto;bottom:auto;width:min(335px,calc(100vw - 16px));max-height:min(47dvh,320px);overflow:hidden;padding:10px;z-index:39;background:#211914f2;box-shadow:0 12px 42px #0008;border:1px solid #ffffff32;border-radius:12px}
+  body.mpChatOpen #mpChat{display:flex;flex-direction:column}
+  #mpChatHeader{display:flex;flex:0 0 auto;justify-content:space-between;align-items:center;padding:0 0 6px 3px;color:#e6c7a9;font-size:12px}
+  #mpChatClose{font-size:21px!important;line-height:1;padding:0 8px!important;background:transparent!important;border:0!important}
+  #mpMessages{height:auto;min-height:38px;max-height:min(24dvh,160px);overflow-y:auto;overscroll-behavior:contain;flex:1 1 auto;font-size:12px;line-height:1.55}
+  #mpSend{flex:0 0 auto;margin-top:7px}
+  #mpSend input{font-size:16px;min-height:37px;padding:7px}
+  #mpSend button{min-height:37px}
+  #mpToast{top:calc(145px + var(--safeTop));max-width:calc(100vw - 48px)}
+  #hud{box-sizing:border-box;left:6px;right:6px;bottom:calc(7px + var(--safeBottom));flex-direction:column;gap:4px}
+  #hud .g{box-sizing:border-box;width:100%;gap:3px;padding:4px 5px;flex-wrap:wrap;justify-content:center;border-radius:10px}
+  #hud .g button{min-height:32px;padding:7px 8px;font-size:11px}
+  #hud .g label{font-size:11px;padding:0 2px}
+  #hud input[type=range]{width:68px}
+  #hud #views{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #hud #views::-webkit-scrollbar{display:none}
+  #hud #views button{white-space:nowrap;flex:0 0 auto}
+  body.dining #eatHud{box-sizing:border-box;left:7px;right:7px;bottom:calc(7px + var(--safeBottom));gap:5px;flex-direction:column;align-items:stretch}
+  #eatPanel{box-sizing:border-box;max-width:none;width:100%;gap:6px;padding:9px 10px 8px;border-radius:11px}
+  #eatPanel .topline{gap:8px;align-items:center}
+  #eatPanel .topline strong{font-size:12px;white-space:nowrap}
+  #eatRemain{font-size:10px;text-align:right}
+  #eatPrompt{font-size:11px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  #eatSteps{display:flex;flex-wrap:nowrap;justify-content:flex-start;gap:4px;max-width:100%;min-width:0;overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  #eatSteps::-webkit-scrollbar{display:none}
+  #eatSteps .step{flex:0 0 auto;padding:4px 7px;font-size:10px}
+  #eatCommands{display:flex;flex-direction:row;width:100%;min-width:0;gap:5px}
+  #eatCommands button{flex:1 1 0;min-width:0;min-height:39px;padding:8px 4px;font-size:12px;border-radius:9px}
+  body.dining #mouthZone{bottom:var(--mealHudOffset,146px);height:80px;width:min(74vw,400px);background:radial-gradient(ellipse at 50% 90%,rgba(48,16,13,.75),rgba(38,15,12,.22) 56%,transparent 76%)}
+  body.dining #mouthZone span{bottom:12px;font-size:11px}
+  #eatNotice{top:calc(145px + var(--safeTop));font-size:12px}
+}
+@media(max-width:390px){
+  #mpBar{gap:4px;padding:5px 6px}
+  #mpBar button{padding:5px 6px;font-size:10px}
+  #eatCommands button{font-size:11px}
+}
+@media(max-width:740px) and (max-height:590px){
+  #mpChat{max-height:38dvh}
+  #mpMessages{max-height:17dvh}
+  #eatPrompt{-webkit-line-clamp:1}
+  #eatPanel{padding:6px 8px;gap:4px}
+  #eatCommands button{min-height:34px}
+}
 </style>
 </head><body>
 
-<div id="mpBar"><span id="mpDot" class="dot"></span><span class="label" id="mpStatus">연결 대기</span><span id="mpCount">0/8</span><span class="mpSep"></span><span id="mpRoomCode">방 미입장</span><button id="mpCopy" title="방 코드 복사" disabled>코드 복사</button><button id="mpProfile" title="닉네임·아바타 색상 변경" disabled>설정</button></div>
-<div id="mpRole"><span id="mpRoleText">셰프 대기 중</span><button id="mpClaim">셰프 맡기</button><button id="mpRelease" style="display:none">자리 넘기기</button><button id="mpServe" style="display:none">손님 접시에 내놓기</button><button id="mpTake" style="display:none">내 접시에 더 담기</button></div>
+<div id="mpBar"><span id="mpDot" class="dot"></span><span class="label" id="mpStatus">연결 대기</span><button id="mpPeopleToggle" type="button" aria-label="접속자 목록 열기" aria-expanded="false" title="접속자 목록"><span id="mpCount">0/8</span></button><span class="mpSep"></span><span id="mpRoomCode">방 미입장</span><button id="mpCopy" title="방 코드 복사" disabled>코드 복사</button><button id="mpProfile" title="닉네임·아바타 색상 변경" disabled>설정</button></div>
+<div id="mpRole"><span id="mpRoleText">셰프 대기 중</span><button id="mpClaim">셰프 맡기</button><button id="mpRelease" style="display:none">자리 넘기기</button><button id="mpServe" style="display:none">손님 접시에 내놓기</button><button id="mpSteal" style="display:none" title="손님 접시의 회를 몰래 먹기">쉿, 한 점</button><button id="mpTake" style="display:none">내 접시에 더 담기</button></div>
 <div id="mpPeople"></div>
-<div id="mpChat"><div id="mpMessages" aria-live="polite"></div><form id="mpSend"><input id="mpInput" maxlength="160" autocomplete="off" placeholder="조용히 대화 나누기…"><button>전송</button></form></div>
+<button id="mpChatToggle" type="button" aria-expanded="false" aria-controls="mpChat">♧ 채팅 <span id="mpChatBadge" aria-label="읽지 않은 메시지"></span></button>
+<div id="mpChat" role="region" aria-label="스시집 채팅"><div id="mpChatHeader"><strong>스시집 대화</strong><button id="mpChatClose" type="button" aria-label="채팅 접기">×</button></div><div id="mpMessages" aria-live="polite"></div><form id="mpSend"><input id="mpInput" maxlength="160" autocomplete="off" placeholder="조용히 대화 나누기…" aria-label="채팅 입력"><button type="submit">전송</button></form></div>
 <div id="mpToast"></div>
 <div id="mpSetup"><div class="mpModal"><div class="mpEyebrow">SUSHI COUNTER</div><h2>작은 스시집</h2><p>친구와 방 코드를 공유해 조용한 스시 카운터를 즐겨 봐. 방마다 최대 8명, 셰프는 한 명이야.</p>
 <div class="mpLine"><input id="mpName" maxlength="14" placeholder="닉네임" value="손님" aria-label="닉네임"><input id="mpColor" type="color" value="#b68c67" title="아바타 옷 색상" aria-label="아바타 옷 색상"></div>
@@ -301,6 +371,48 @@ function avatarLabel(name){
  // never a giant overlapping placard spanning multiple adjacent seats.
  spr.position.set(0,2.22,0);spr.scale.set(.77,.20,1);return spr;
 }
+// V6: short-lived speech balloons are attached to actual 3D avatar groups.
+const activeBubbles=new Map();
+function chatBubble(message){
+  const cv=document.createElement('canvas');cv.width=640;cv.height=238;
+  const c=cv.getContext('2d');
+  c.fillStyle='rgba(252,242,223,.96)';c.strokeStyle='rgba(108,77,55,.75)';c.lineWidth=5;
+  c.beginPath();c.roundRect(12,10,616,184,28);c.fill();c.stroke();
+  c.beginPath();c.moveTo(285,191);c.lineTo(320,223);c.lineTo(355,191);c.closePath();c.fill();c.stroke();
+  // Make the two-line text fit both Korean and Western fonts.
+  const msg=String(message||'').slice(0,72).replace(/\s+/g,' ').trim();
+  c.font='600 41px "Noto Sans KR",system-ui,sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillStyle='#3e2c24';
+  const lines=[''];
+  for(const ch of msg){const k=lines.length-1;
+    if(c.measureText(lines[k]+ch).width>550 && lines.length<2)lines.push(ch);
+    else if(c.measureText(lines[k]+ch).width<=550)lines[k]+=ch;
+    else {lines[k]=lines[k].slice(0,-1)+'…';break;}
+  }
+  if(lines.length===1)c.fillText(lines[0],320,107,558);
+  else{c.fillText(lines[0],320,81,558);c.fillText(lines[1],320,139,558);}
+  const t=new THREE.CanvasTexture(cv);t.needsUpdate=true;
+  const spr=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthWrite:false,depthTest:false}));
+  spr.position.set(0,2.78,0);spr.scale.set(1.01,.375,1);spr.renderOrder=20;
+  return spr;
+}
+function attachBubble(key,record){
+ const data=activeBubbles.get(key);if(!data||data.until<performance.now())return;
+ const b=chatBubble(data.message);record.group.add(b);record.bubble=b;
+}
+MP.showBubble=(id,message)=>{
+ if(!id)return;
+ activeBubbles.set(id,{message,until:performance.now()+5500});
+ const r=avatarRecords.get(id);if(!r)return;
+ if(r.bubble){r.group.remove(r.bubble);r.bubble.material.map.dispose();r.bubble.material.dispose();}
+ attachBubble(id,r);
+};
+function tickBubbles(now){
+ for(const [id,b] of activeBubbles){const r=avatarRecords.get(id);
+  if(now>b.until){activeBubbles.delete(id);
+   if(r&&r.bubble){r.group.remove(r.bubble);r.bubble.material.map.dispose();r.bubble.material.dispose();r.bubble=null;}
+  }else if(r&&r.bubble){r.bubble.material.opacity=Math.min(1,Math.max(0,(b.until-now)/550));}
+ }
+}
 function buildAvatar(u,isChef){
  const g=new THREE.Group(),garment=avatarCloth(isChef?0x4a5156:u.color);
  const mesh=(geo,mat,x,y,z,parent=g)=>{
@@ -344,14 +456,15 @@ MP.updateAvatars=(users,chef,self)=>{
    if(o.isSprite){o.material.map.dispose();o.material.dispose();}
    else if(o.isMesh&&o.geometry)o.geometry.dispose();
   });}
-  const group=buildAvatar(u,which);avatarLayer.add(group);avatarRecords.set(key,{sig,group});
+  const group=buildAvatar(u,which);avatarLayer.add(group);
+  const r={sig,group,bubble:null};avatarRecords.set(key,r);attachBubble(key,r);
  }
  if(typeof MP.updateSeatPlates==='function')MP.updateSeatPlates(users);
  for(const [key,old] of avatarRecords)if(!seen.has(key)){
   avatarLayer.remove(old.group);old.group.traverse(o=>{
    if(o.isSprite){o.material.map.dispose();o.material.dispose();}
    else if(o.isMesh&&o.geometry)o.geometry.dispose();
-  });avatarRecords.delete(key);
+  });avatarRecords.delete(key);activeBubbles.delete(key);
  }
 };
 MP.updateAvatars(MP.users||[],MP.chef,null);
@@ -374,26 +487,66 @@ for(let seat=0;seat<8;seat++){
  const dish=new THREE.Mesh(new THREE.CylinderGeometry(.94,.88,.10,36),plateMat);
  dish.scale.z=.72;dish.position.y=2.96;g.add(dish);
  const fishGroup=new THREE.Group();g.add(fishGroup);
- seatPlaceSettings.add(g);seatPlates.push({g,fishGroup,last:-1});
+ seatPlaceSettings.add(g);seatPlates.push({g,fishGroup,dish,last:-1});
 }
 
 MP.updateSeatPlates=users=>{
  const bySeat=new Map(users.map(u=>[u.seat,u]));
  seatPlates.forEach((p,seat)=>{
-  const u=bySeat.get(seat),n=u?Math.min(12,u.plate||0):0;
-  p.g.visible=Boolean(u);
+  const u=bySeat.get(seat),n=u?Math.max(0,Math.floor(u.plate||0)):0;
+  p.g.visible=Boolean(u&&u.id!==MP.chef);
   if(p.last===n)return;
   p.last=n;
   while(p.fishGroup.children.length){const o=p.fishGroup.children[0];p.fishGroup.remove(o);o.geometry.dispose();}
-  for(let i=0;i<n;i++){
-   const o=new THREE.Mesh(new THREE.BoxGeometry(.31,.12,.48),fishMat);
-   o.position.set(((i%4)-1.5)*.38,3.07+Math.floor(i/8)*.13,(Math.floor(i/4)%2-.5)*.57);
-   o.rotation.y=(i%2?-.08:.08);p.fishGroup.add(o);
+  if(n){
+    // Exactly one GPU instance for each sashimi slice on this user's plate.
+    const geo=new THREE.BoxGeometry(.24,.10,.30),batch=new THREE.InstancedMesh(geo,fishMat,n);
+    const dummy=new THREE.Object3D();
+    for(let i=0;i<n;i++){
+      const slot=i%15,level=Math.floor(i/15);
+      dummy.position.set((slot%5-2)*.30,3.08+level*.105,(Math.floor(slot/5)-1)*.35);
+      dummy.rotation.set(0,i%2?-.10:.10,0);dummy.updateMatrix();batch.setMatrixAt(i,dummy.matrix);
+    }
+    batch.instanceMatrix.needsUpdate=true;batch.castShadow=false;
+    p.fishGroup.add(batch);
   }
  });
 };
 
 
+// Quiet chef prank: a real sashimi slice travels from the guest table to the chef.
+const flyingSashimi=[];
+MP.playSteal=e=>{
+ const seat=Math.floor(Number(e.seat));if(seat<0||seat>=8)return;
+ const o=new THREE.Mesh(new THREE.BoxGeometry(.28,.11,.38),fishMat);
+ const from=new THREE.Vector3(CX-14+seat*4,AVATAR_FLOOR+3.13,12.25);
+ const chef=avatarRecords.get(e.chefId);
+ const to=chef?chef.group.position.clone().add(new THREE.Vector3(0,7,0)):new THREE.Vector3(CX,2.5,-11.2);
+ o.position.copy(from);scene.add(o);flyingSashimi.push({o,from,to,age:0});
+};
+function tickSteal(dt){
+ for(let i=flyingSashimi.length-1;i>=0;i--){const a=flyingSashimi[i];a.age+=dt;
+  const t=Math.min(1,a.age/1.05),u=t*t*(3-2*t);
+  a.o.position.copy(a.from).lerp(a.to,u);a.o.position.y+=Math.sin(Math.PI*t)*2.3;
+  a.o.rotation.set(t*3.5,t*5,t*2);
+  if(t>=1){scene.remove(a.o);a.o.geometry.dispose();flyingSashimi.splice(i,1);}
+ }
+}
+let plateTap=null;
+rd.domElement.addEventListener('pointerdown',e=>{if(e.button===0)plateTap={x:e.clientX,y:e.clientY};});
+rd.domElement.addEventListener('pointerup',e=>{
+ if(!plateTap)return;
+ const p0=plateTap;plateTap=null;
+ if(Math.hypot(e.clientX-p0.x,e.clientY-p0.y)>9||!MP.isChef||document.body.classList.contains('dining'))return;
+ const rect=rd.domElement.getBoundingClientRect();
+ const nd=new THREE.Vector2((e.clientX-rect.left)/rect.width*2-1,-(e.clientY-rect.top)/rect.height*2+1);
+ const rc=new THREE.Raycaster();rc.setFromCamera(nd,cam);
+ const hits=rc.intersectObjects(seatPlates.map(p=>p.dish),false);
+ if(!hits.length)return;
+ const seat=seatPlates.findIndex(p=>p.dish===hits[0].object);
+ const victim=(MP.users||[]).find(u=>u.seat===seat&&u.id!==MP.chef&&u.plate>0);
+ if(victim)MP.send({type:'steal',target:victim.id});
+});
 // ================= 동작 =================
 const LEAN=30*Math.PI/180,THETA=-(Math.PI/2-LEAN);
 let pose={x:1.2,e:2.2,z:2.4,a:.28},busy=false,auto=false,tl=null,slices=[],flops=[],count=0,P0=-1.8;
@@ -574,15 +727,16 @@ function addDiningFish(i){
  const m=mk(geo,tunaMat,g);m.rotation.z=Math.PI/2;m.scale.setScalar(.7);m.position.x=Hh*.35;
  const wm=mk(boxGeo(0,t,0),M({color:0x2a1206,transparent:true,opacity:0,roughness:.05,clearcoat:1,polygonOffset:true,polygonOffsetFactor:-2}),g);
  wm.rotation.z=Math.PI/2;wm.scale.setScalar(.708);wm.position.x=Hh*.35;wm.castShadow=false;g.userData.wm=wm;
- g.position.set(PLC.x-1.55+(i%6)*.62,.12,PLC.z+(i<6?-.95:.8));g.rotation.set(0,(Math.random()-.5)*.1,-.28);
+ const slot=i%12,layer=Math.floor(i/12);
+ g.position.set(PLC.x-1.55+(slot%6)*.62,.12+layer*.21,PLC.z+(Math.floor(slot/6)===0?-.95:.8));g.rotation.set(0,(Math.random()-.5)*.1,-.28);
  g.userData.hp=g.position.clone();g.userData.hq=g.quaternion.clone();dS.add(g);fishes.push(g);
 }
 function prep(){fishes.forEach(f=>dS.remove(f));fishes=[];
- for(let i=0;i<Math.min(12,MP.served);i++)addDiningFish(i);
+ for(let i=0;i<MP.served;i++)addDiningFish(i);
 }
 function mpSyncDining(){
  if(!dining || (drag&&drag.k==='fish') || eating)return;
- const available=Math.min(12,MP.served);
+ const available=MP.served;
  while(fishes.length>available){const g=fishes.pop();dS.remove(g)}
  while(fishes.length<available)addDiningFish(fishes.length);
  upd();
@@ -602,7 +756,7 @@ function enter(){
  auto=false;bauto.classList.remove('on');dining=true;document.body.classList.add('dining');$('hud').style.display='none';
  dS.visible=true;avatarLayer.visible=false;seatPlaceSettings.visible=false;board.visible=plate.visible=block.visible=kout.visible=false;slices.forEach(s=>s.visible=false);
  prep();resetSauce();home();ctl.enabled=false;cv.style.cursor='grab';
- cam.fov=dFov();cam.position.set(0,6.2,8.4);ctl.target.set(.2,1,.2);ctl.update();cam.updateProjectionMatrix();upd()}
+ cam.fov=dFov();cam.position.set(0,6.2,8.4);ctl.target.set(.2,1,.2);ctl.update();cam.updateProjectionMatrix();upd();positionMobileMouth()}
 MP.enterDining=()=>{if(!dining)enter()};
 function leave(){if(!dining)return;drag=null;eating=null;dining=false;document.body.classList.remove('dining');chewOv.classList.remove('show');mouthOv.classList.remove('show');
  dS.visible=false;board.visible=plate.visible=kout.visible=true;block.visible=xc<L0-.03;slices.forEach(s=>s.visible=!s.userData.eaten);
@@ -613,7 +767,16 @@ $('eatSound').onclick=e=>{snd=!snd;e.currentTarget.textContent=snd?'소리 켜�
 const rc=new THREE.Raycaster(),nd=new THREE.Vector2(),PH={soy:1.7,wasabi:1.7,chop:.9,fish:1.2,sake:1.7,cup:1};
 const ray=e=>{const r=cv.getBoundingClientRect();nd.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);rc.setFromCamera(nd,cam)};
 const onPl=(e,y)=>{ray(e);const p=V3();return rc.ray.intersectPlane(new THREE.Plane(UP,-y),p)?p:null};
-const mouthIn=e=>e&&e.clientY>innerHeight*.78&&Math.abs(e.clientX-innerWidth/2)<Math.min(260,innerWidth*.3);
+const mouthIn=e=>{if(!e)return false;
+  const mobile=matchMedia('(max-width:740px)').matches;
+  const hudTop=mobile?$('eatHud').getBoundingClientRect().top:innerHeight;
+  const minY=mobile?Math.max(innerHeight*.5,Math.min(innerHeight*.74,hudTop-72)):innerHeight*.78;
+  const maxY=mobile?hudTop+10:innerHeight+1;
+  return e.clientY>minY&&e.clientY<maxY&&Math.abs(e.clientX-innerWidth/2)<Math.min(260,innerWidth*.3);
+};
+const positionMobileMouth=()=>{if(!dining)return;const h=$('eatHud').getBoundingClientRect();
+  document.documentElement.style.setProperty('--mealHudOffset',Math.ceil(innerHeight-h.top+6)+'px');};
+addEventListener('resize',positionMobileMouth);
 cv.addEventListener('pointerdown',e=>{mx=e;if(!dining||e.button||eating||drinking)return;ray(e);
  let o=null;for(const x of rc.intersectObjects([jar,wb,cs,skBot,skCup,...fishes],true)){o=x.object;while(o&&!o.userData.k)o=o.parent;if(o)break}
  if(!o){let bd=90;const r=cv.getBoundingClientRect();for(const c of[jar,wb,cs,skBot,skCup,...fishes]){const kk=c.userData.k,w=V3(0,kk==='fish'?.1:kk==='chop'?0:1.2,kk==='chop'?1.8:0);c.localToWorld(w);w.project(cam);const dd=Math.hypot((w.x+1)/2*r.width+r.left-e.clientX,(1-w.y)/2*r.height+r.top-e.clientY);if(dd<bd){bd=dd;o=c}}}
@@ -666,6 +829,39 @@ const FL={sw:[['이, 이 맛은…?! 간장의 감칠맛과 와사비의 알싸�
 w:[['크윽…!! 코가 정수리까지 관통당했다! 하, 하지만 이 알싸함 뒤의 단맛은…!','찌잉—!!'],['눈물이 멈추지 않아…! 그런데 젓가락이 멈추질 않는다!?','핑—!!'],['와사비의 불꽃이 콧속에서 폭발했다!! 그 불꽃이 참치를 더 빛내고 있어…!','화르륵!!']],
 s:[['간장이 참치의 지방 속으로 스며든다…! 감칠맛의 폭풍이 몰아친다!!','스으읍—!!'],['이것이 간장의 힘인가…! 참치의 단맛이 한층 깊어졌어!','쿵!!'],['짭짤함과 고소함의 완벽한 균형…! 계산된 한 점이다!!','번쩍!!']],
 n:[['아무것도 찍지 않았는데 이 맛이라니…! 참치 본연의 맛이 입 안을 지배한다!','스윽…!'],['씹기도 전에 혀에서 녹아내렸다…! 이 신선함, 대체 몇 시간 전에 잡은 거지!?','사르르…!!'],['담백한데 깊다…! 바다의 정수가 응축된 한 점…!','두근…!!']]};
+// Original tasting lines: aftertaste, texture, fat, temperature and aroma.
+FL.sw.push(
+ ['먼저 간장의 감칠맛… 이어서 와사비 향이 지나가고, 마지막에 참치의 단맛이 조용히 남는군.','스으으…'],
+ ['씹는 순간 지방이 스르르 풀린다… 와사비가 그 느끼함을 지워 주고 있어!','사르르…!'],
+ ['한 점에 세 번의 맛이 있다. 첫맛은 간장, 중간은 참치, 끝맛은 바다의 향이야.','삼중주!!'],
+ ['이 절묘한 여운… 혀끝에 남은 단맛이 다음 한 점을 부르고 있어!','두근…'],
+ ['차갑게 시작해 따스한 감칠맛으로 끝난다… 조화가 기막히군.','파아앗!'],
+ ['지방의 고소함은 풍부한데 끝은 이렇게 맑다니… 와사비 한 점이 흐름을 바꿨군!','번쩍!!'],
+ ['입을 다물고 음미해 봐… 향이 코 뒤편으로 천천히 올라온다.','후우…'],
+ ['다 먹은 줄 알았는데 아직 남아 있어… 혀끝의 이 긴 여운!','여운…!!']
+);
+FL.w.push(
+ ['코끝에 전율이 스쳤지만 곧 참치의 은은한 단맛이 살아난다…','찌잉…'],
+ ['알싸한 향이 지나간 자리에서 지방의 고소함이 더욱 또렷해지는군.','스으…'],
+ ['처음엔 강렬했어. 하지만 끝맛은 놀랍도록 부드럽고 깨끗하다!','반전!!'],
+ ['와사비의 향이 생선의 풍미를 가리지 않고 오히려 끌어올리고 있어.','훅…!'],
+ ['눈물이 살짝 맺혔다… 그런데 이 여운을 놓치고 싶지 않아.','찡…']
+);
+FL.s.push(
+ ['간장 한 방울이 표면을 적시는 순간, 참치 지방의 단맛이 깊어진다…','또옥…'],
+ ['짜지 않다… 짠맛이 먼저 열리고 그 뒤로 은근한 감칠맛이 길게 따라온다.','스으윽…'],
+ ['씹을수록 감칠맛이 층을 이뤄 펼쳐지는군. 간장의 향은 절제되어 있어.','차르륵…'],
+ ['이건 소스가 주인공이 아니야. 간장은 참치의 맛을 밝혀 주는 조명이군!','반짝!!'],
+ ['마지막 한 번의 씹음에서 고소한 풍미가 또 한 번 피어올랐어.','음미…']
+);
+FL.n.push(
+ ['아무것도 더하지 않았는데… 첫맛은 담백하고, 뒤에 은은한 단맛이 찾아온다.','사르르…'],
+ ['혀에 닿는 순간의 차가움, 그 뒤에 번지는 부드러운 질감… 훌륭해.','고요…'],
+ ['한 점을 천천히 씹으니 결 사이에서 고소한 풍미가 풀려나오는군.','스르륵…'],
+ ['입 안에 여운이 남았다… 간장 없이 먹어서 알 수 있는 섬세한 맛이야.','여운…'],
+ ['비린 향은 없고 산뜻한 감칠맛만 있다… 신선한 참치의 장점이 살아 있어.','청명…'],
+ ['시간이 지나도 혀끝에서 사라지지 않는 단맛. 이 한 점은 기억에 남겠어.','두근…']
+);
 let shId=0;
 function shout(msg,fx,tone){const root=$('shout'),id=++shId,dir=Math.random()<.5?-1:1,T=2500,mk2=(c,t)=>{const e=document.createElement('div');e.className=c;if(t)e.textContent=t;return e};
  root.replaceChildren();const ln=mk2('ln'),row=mk2('row'),bn=mk2('bn'+(tone?' '+tone:''),msg),f=mk2('fx',fx);row.appendChild(bn);f.style[dir>0?'left':'right']='5%';root.append(ln,row,f);
@@ -770,7 +966,7 @@ MP.onResetOk=()=>{};MP.onChefChanged=isChef=>{
 };
  document.getElementById('ld').remove();if(MP.reconcile)MP.reconcile();
 let last=performance.now();
-(function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;step(dt);eatUpdate(dt);ctl.update();roomCull();rd.render(scene,cam)})(last);
+(function loop(now){requestAnimationFrame(loop);const dt=Math.min(.05,(now-last)/1000);last=now;step(dt);eatUpdate(dt);tickBubbles(now);tickSteal(dt);ctl.update();roomCull();rd.render(scene,cam)})(last);
 }
 
 </script>
