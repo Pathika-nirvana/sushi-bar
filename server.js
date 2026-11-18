@@ -32,7 +32,13 @@ function roomCode() {
   do { code = Array.from(crypto.randomBytes(6), v=>alphabet[v%alphabet.length]).join(''); } while (rooms.has(code));
   return code;
 }
-function newRoom() { const room={code:roomCode(), members:new Map(), chef:null, stock:0, served:0, revision:0}; rooms.set(room.code,room); return room; }
+// User-chosen room names can contain Korean, numbers, spaces, punctuation, etc.
+// Only trim surrounding whitespace and normalize Unicode; never force a fixed 6-character format.
+function normalizeRoomCode(input) {
+  if(typeof input !== 'string')return '';
+  return input.trim().normalize('NFC').toUpperCase();
+}
+function newRoom(code=roomCode()) { const room={code, members:new Map(), chef:null, stock:0, served:0, revision:0}; rooms.set(room.code,room); return room; }
 function members(room) { return [...room.members.values()]; }
 function snapshot(room) {
   return {type:'state', room:room.code, chef:room.chef, stock:room.stock, served:room.served, revision:room.revision,
@@ -59,13 +65,16 @@ function leaveRoom(ws) {
 function joinRoom(ws, m, create) {
   let u=connections.get(ws);
   if(u.room) return err(ws,'이미 방에 입장했어요. 다른 방은 새로 접속해 주세요.');
-  let room;
-  if(create){room=newRoom();}
-  else{
-    const code=String(m.code||'').trim().toUpperCase().replace(/\s/g,'');
-    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code)) return err(ws,'방 코드는 영문·숫자 6자리예요.');
+  let room, created=false;
+  if(create){
+    room=newRoom();created=true;
+  }else{
+    const code=normalizeRoomCode(m.code);
+    // No fixed format: even a single digit or Korean word is a valid room name.
+    if(!code || Array.from(code).length>64 || /[\u0000-\u001f\u007f]/.test(code))
+      return err(ws,'방 코드를 입력해 주세요. (최대 64글자)');
     room=rooms.get(code);
-    if(!room) return err(ws,'해당 코드의 방이 없어요. 방장에게 코드를 확인해 주세요.');
+    if(!room){room=newRoom(code);created=true;}
   }
   if(room.members.size>=MAX_PER_ROOM) return err(ws,'이 방은 8명 정원이에요.');
   const taken=new Set(members(room).map(p=>p.seat));
@@ -74,7 +83,7 @@ function joinRoom(ws, m, create) {
   u.color=/^#[0-9a-fA-F]{6}$/.test(m.color)?m.color:'#b68c67';
   u.room=room;
   room.members.set(ws,u);
-  send(ws,{type:'welcome',id:u.id,room:room.code,created:create});
+  send(ws,{type:'welcome',id:u.id,room:room.code,created});
   sync(room);
 }
 wss.on('connection', ws=>{

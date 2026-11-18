@@ -64,7 +64,7 @@
       joined=true;self=m.id;roomCode=m.room;pending=null;
       $('mpSetup').style.display='none';
       $('mpProfile').disabled=false;
-      log('시스템',m.created?`새 방 ${roomCode}가 열렸어요. 코드를 공유해 보세요.`:`방 ${roomCode}에 입장했어요.`);
+      log('시스템',m.created?`방 ${roomCode}를 새로 만들었어요. 이 코드를 공유해 보세요.`:`방 ${roomCode}에 입장했어요.`);
       render();
       return;
     }
@@ -119,9 +119,13 @@
   }
   $('mpCreate').onclick=()=>connectAndEnter('create','');
   $('mpJoin').onclick=()=>{
-    const code=codeInput.value.trim().toUpperCase().replace(/\s/g,'');
-    if(!/^[A-HJ-NP-Z2-9]{6}$/.test(code)){
-      $('mpLobbyError').textContent='방 코드는 영문·숫자 6자리야.';return;
+    // Use the same normalization as the server. Do not strip meaningful spaces.
+    const code=codeInput.value.trim().normalize('NFC').toUpperCase();
+    if(!code){
+      $('mpLobbyError').textContent='원하는 방 코드를 입력해 줘.';return;
+    }
+    if(Array.from(code).length>64){
+      $('mpLobbyError').textContent='방 코드는 최대 64글자까지 입력할 수 있어.';return;
     }
     connectAndEnter('join',code);
   };
