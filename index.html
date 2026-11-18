@@ -53,6 +53,17 @@ body.dining #eatHud{display:flex}
 #shout .bn.sake{background:linear-gradient(100deg,#f2f8ff,#c9dffc);box-shadow:7px 7px 0 #2c4f9a}
 #shout .fx{position:absolute;top:50%;font-weight:900;font-style:italic;font-size:clamp(38px,8.5vw,112px);color:#ffd84a;-webkit-text-stroke:3px #7a1010;text-shadow:5px 5px 0 #7a1010;white-space:nowrap}
 #shout .sp{position:absolute;left:50%;top:32%;color:#fff3b0;font-size:clamp(18px,3vw,34px);text-shadow:0 0 8px #ff9d2e}
+
+/* V9: dining camera tools, unobtrusive above the main HUD */
+#mealView{display:none;position:fixed;top:109px;left:12px;z-index:7;align-items:center;gap:3px;padding:5px;background:rgba(24,18,15,.75);border:1px solid rgba(255,255,255,.14);backdrop-filter:blur(10px);border-radius:10px;max-width:calc(100vw - 24px);flex-wrap:wrap}
+body.dining #mealView{display:flex}
+#mealView button{font-size:11px;padding:6px 9px;border:1px solid rgba(255,255,255,.15);border-radius:7px}
+#mealView button.on{background:#8c533a;border-color:#ba8a67}
+#mealView .hint{font-size:10px;color:#cdbfaf;padding:0 5px}
+#v9Flash{position:fixed;inset:0;z-index:8;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 33%,rgba(169,48,25,.45) 100%)}
+#v9Flash.burst{animation:v9Flash .75s ease-out}
+@keyframes v9Flash{0%{opacity:.85}100%{opacity:0}}
+@media(max-width:740px){#mealView{top:94px;left:7px;gap:2px}#mealView button{font-size:10px;padding:5px 6px}#mealView .hint{display:none}}
 </style>
 <style>
 #mpBar{position:fixed;z-index:25;right:14px;top:12px;display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid #ffffff23;border-radius:11px;background:#1a1412c9;backdrop-filter:blur(14px);font-size:12px;color:#e9ded0}
@@ -180,6 +191,7 @@ body.dining #eatHud{display:flex}
  </div>
  <div id="eatCommands"><button id="backToCut">← 썰기로</button><button id="newSauce">종지 새로</button><button id="eatSound">소리 꺼짐</button></div>
 </div>
+<div id="mealView" aria-label="식사 시점 조절"><button type="button" data-meal-view="original" class="on">기본 각도</button><button type="button" data-meal-view="close">접시 가까이</button><button type="button" data-meal-view="side">측면</button><button type="button" data-meal-view="top">위에서</button><span class="hint">빈 곳 드래그: 회전 · 휠: 확대 · 우클릭: 이동</span></div><div id="v9Flash"></div>
 <div id="eatNotice" class="hidden"></div><div id="mouthZone"><span>입으로 가져와!</span></div><div id="chewOverlay"></div><div id="shout"></div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
@@ -582,7 +594,8 @@ function sfxOld(k){try{AC2=AC2||new AudioContext();const c=AC2,t=c.currentTime,g
 let cutRequested=false,currentCutGeneration=null,lastCutEvent=0;
 function requestCut(){
  if(!MP.isChef){MP.toast('셰프만 참치를 썰 수 있습니다.');return;}
- if(busy||cutRequested||L0-xc<.03)return;
+ if(busy||cutRequested||MP.cutState?.cutting)return;
+ if(L0-xc<.03){if(auto){auto=false;bauto.classList.remove('on');MP.toast('한 덩어리를 다 썰었어. 새 참치 준비를 눌러 줘.');}return;}
  cutRequested=true;
  MP.send({type:'slice',thickness:Number(sth.value),speed:Number(ssp.value)});
 }
@@ -602,7 +615,7 @@ MP.playCut=c=>{
  if(snapshot && !busy && slices.length!==snapshot.cuts.length)restoreCuts(snapshot.cuts);
  animateServerCut(c,Date.now()-(c.started||Date.now()));
 };
-MP.onCutError=()=>{cutRequested=false};
+MP.onCutError=()=>{cutRequested=false;if(auto){auto=false;bauto.classList.remove('on');}};
 
 function detach(){
  sfx('thud');const {xa,xb}=tl,t=xb-xa;
@@ -618,7 +631,8 @@ function step(dt){
  if(tl){
   tl.t+=dt;let acc=0,i=0;
   for(;i<tl.segs.length;i++){if(tl.t<acc+tl.segs[i].d)break;acc+=tl.segs[i].d}
-  if(i>=tl.segs.length){pose=Object.assign({},tl.segs[3].to);tl=null;busy=false;if(auto&&MP.isChef)requestCut()}
+  if(i>=tl.segs.length){pose=Object.assign({},tl.segs[3].to);tl=null;busy=false;/* next cut waits for server-completed state */
+    if(auto&&MP.isChef&&!MP.cutState?.cutting)requestCut();}
   else{const s=tl.segs[i],u=ss((tl.t-acc)/s.d);if(i===2&&!tl.s){tl.s=1;sfx('doma');sfx('slice')}
    pose={x:s.from.x+(s.to.x-s.from.x)*u,e:s.from.e+(s.to.e-s.from.e)*u,z:s.from.z+(s.to.z-s.from.z)*u,a:s.from.a+(s.to.a-s.from.a)*u};
    if(i===3&&!tl.done){tl.done=true;detach()}}
@@ -648,16 +662,21 @@ function restoreCuts(cuts){
  block.geometry=boxGeo(xc,L0,0);
  cnt.textContent='썬 조각 '+count;
 }
-MP.onCutReset=g=>{currentCutGeneration=g;reset();};
+MP.onCutReset=g=>{currentCutGeneration=g;reset();auto=false;bauto.classList.remove('on');};
 MP.onCutState=m=>{
  if(currentCutGeneration!==m.generation){currentCutGeneration=m.generation;reset();}
  if(!busy && (m.cuts||[]).length!==slices.length)restoreCuts(m.cuts);
  if(m.cutting && !busy && m.cutting.id!==lastCutEvent){
   animateServerCut(m.cutting,Date.now()-m.cutting.started);
  }
+ // The previous cut is safe to follow ONLY after server-side completion.
+ if(auto&&MP.isChef&&!m.cutting&&!busy&&!cutRequested){
+  if(L0-xc<.03){auto=false;bauto.classList.remove('on');MP.toast('참치를 다 썰었어. 새 참치를 준비할 수 있어.');}
+  else requestCut();
+ }
 };
 bcut.onclick=requestCut;
-bauto.onclick=()=>{auto=!auto;bauto.classList.toggle('on',auto);if(auto&&MP.isChef)requestCut()};
+bauto.onclick=()=>{auto=!auto;bauto.classList.toggle('on',auto);if(auto&&MP.isChef&&!MP.cutState?.cutting)requestCut()};
 document.getElementById('rst').onclick=()=>{if(MP.isChef){if(busy){MP.toast('칼질이 끝난 뒤 새 참치를 준비할 수 있어.');return}MP.send({type:'reset'})}else MP.toast('셰프만 새 참치를 준비할 수 있어.');};
 addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){e.preventDefault();requestCut()}});
 // ================= 카메라 =================
@@ -679,7 +698,7 @@ const $=i=>document.getElementById(i),cv=rd.domElement,wrap=a=>Math.atan2(Math.s
 const eatPrompt=$('eatPrompt'),eatNotice=$('eatNotice'),chewOv=$('chewOverlay'),mouthOv=$('mouthZone'),stp=[...document.querySelectorAll('#eatSteps .step')];
 const dS=new THREE.Group();dS.visible=false;scene.add(dS);
 const DISH=V3(.4,0,1),PLC=V3(-3.7,0,-1.7),SA={soy:0,wasabi:0,mix:0,sw:0,sake:0};
-let dining=false,drag=null,fishes=[],eating=null,snd=false,ac=null,noteT=0,chewT=0,clk=0,sig='',mx=null,warned=0;
+let dining=false,drag=null,fishes=[],eating=null,propDrinking=null,snd=false,ac=null,noteT=0,chewT=0,clk=0,sig='',mx=null,warned=0;
 const tex=(n,rx=1,ry=1)=>{const t=new THREE.Texture(IM[n]);t.encoding=THREE.sRGBEncoding;t.anisotropy=8;t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(rx,ry);t.needsUpdate=true;return t};
 const M=o=>new THREE.MeshPhysicalMaterial(o),mk=(g,m,p=dS)=>{const o=new THREE.Mesh(g,m);o.castShadow=o.receiveShadow=true;p.add(o);return o};
 const cyl=(a,b,h,m,p,y,open=false)=>{const o=mk(new THREE.CylinderGeometry(a,b,h,48,1,open),m,p);o.position.y=y;return o};
@@ -696,6 +715,7 @@ const dPlate=mk(new THREE.LatheGeometry(lathe([[0,.1],[2.4,.1],[3,.16],[3.25,.3]
 dPlate.position.set(PLC.x,0,PLC.z);
 const dish=mk(new THREE.LatheGeometry(lathe([[0,.1],[.6,.1],[.68,.14],[1.15,.72],[1.2,.76],[1.25,.72],[.82,.14],[.7,.03],[.55,0]]),72),M({color:0xf1eee6,roughness:.15,clearcoat:1,side:THREE.DoubleSide}));
 dish.position.set(DISH.x,0,DISH.z);
+ dish.userData={k:'dish',hp:V3(DISH.x,0,DISH.z),hr:new THREE.Euler()};
 // 간장통 (전개도 텍스처를 부품별로 감기)
 const jar=new THREE.Group();dS.add(jar);const jh=2.35,jr=.62,red=M({color:0xc4161c,roughness:.28,clearcoat:1});
 cyl(jr,jr,jh,M({map:tex('sb'),roughness:.08,clearcoat:1,clearcoatRoughness:.03}),jar,jh/2,true);
@@ -732,7 +752,7 @@ const lvY=()=>.14+SA.soy*.46;
 // 회: 썰어 둔 조각을 그대로 접시에
 MP.reconcile=()=>{if(dining)mpSyncDining()};
 function addDiningFish(i){
- const t=.22,g=new THREE.Group(),geo=boxGeo(0,t,0);g.userData={k:'fish',wet:0,wa:0};
+ const t=.22,g=new THREE.Group(),geo=boxGeo(0,t,0);g.userData={k:'fish',wet:0,wa:0,thickness:(Number(MP.plateCuts?.[i])||.22)};
  g.scale.setScalar(Math.max(.55,Math.min(2.1,(Number(MP.plateCuts?.[i])||.22)/.22)));
  const m=mk(geo,tunaMat,g);m.rotation.z=Math.PI/2;m.scale.setScalar(.7);m.position.x=Hh*.35;
  const wm=mk(boxGeo(0,t,0),M({color:0x2a1206,transparent:true,opacity:0,roughness:.05,clearcoat:1,polygonOffset:true,polygonOffsetFactor:-2}),g);
@@ -747,17 +767,19 @@ function prep(){fishes.forEach(f=>dS.remove(f));fishes=[];
 function mpSyncDining(){
  if(!dining || (drag&&drag.k==='fish') || eating)return;
  const available=MP.served;
+ if(available>0&&V9.lastPlateQty===0)newPlateV9();
+ V9.lastPlateQty=available;
  while(fishes.length>available){const g=fishes.pop();dS.remove(g)}
  while(fishes.length<available)addDiningFish(fishes.length);
- fishes.forEach((f,i)=>{if(f!==drag?.o){const t=Number(MP.plateCuts?.[i])||.22;f.scale.setScalar(Math.max(.55,Math.min(2.1,t/.22)));}});
+ fishes.forEach((f,i)=>{if(f!==drag?.o){const t=Number(MP.plateCuts?.[i])||.22;f.scale.setScalar(Math.max(.55,Math.min(2.1,t/.22)));f.userData.thickness=t;}});
  upd();
 }
 function resetSauce(){SA.soy=SA.wasabi=SA.mix=SA.sw=0;stream.visible=wstr.visible=bl.visible=false;sig='';warned=0}
-function home(){for(const o of[jar,wb,cs,skBot,skCup]){o.position.copy(o.userData.hp);o.rotation.copy(o.userData.hr);o.userData.f=0}cs.rotation.x=-.12}
+function home(){for(const o of[jar,wb,cs,skBot,skCup,dish]){o.position.copy(o.userData.hp);o.rotation.copy(o.userData.hr);o.userData.f=0}cs.rotation.x=-.12}
 const note=m=>{eatNotice.textContent=m;eatNotice.classList.remove('hidden');noteT=2.6};
 function upd(){const n=SA.soy>=.5,w=SA.wasabi>=.45,m=SA.mix>=.9&&w,d=fishes.some(f=>f.userData.wet>.5||f.userData.wa>.3),e=eatenTotal>0,fl=[n,w,m,d,e],s=fl.join()+fishes.length+eatenTotal;if(s===sig)return;sig=s;
  stp.forEach((el,i)=>{el.classList.toggle('done',fl[i]);el.classList.toggle('active',!fl[i]&&fl.slice(0,i).every(Boolean))});
- eatPrompt.textContent=!fishes.length?'내 접시가 비었어. 셰프가 회를 내놓으면 각자 접시에 담겨':!n?'간장통을 잡고 종지 위로 끌어가 봐 — 쪼르르 따라져':!w?'와사비통을 종지 위로 끌어가서 쭉 짜 봐':!m?'젓가락을 잡고 종지 안에서 빙글빙글 저어 봐':!d?'회를 끌어다 간장에 푹 찍어 봐':'간장 묻은 회를 화면 아래(내 입)로 가져와!';if(fishes.length)eatPrompt.textContent+=' · 바로 입으로 가져가서 그냥 먹어도 돼 · 사케병을 잔에 따라 마셔도 돼';
+ eatPrompt.textContent=!fishes.length?'내 접시가 비었어. 셰프가 회를 내놓으면 각자 접시에 담겨':!n?'간장통을 잡고 종지 위로 끌어가 봐 — 쪼르르 따라져':!w?'와사비통을 종지 위로 끌어가서 쭉 짜 봐':!m?'젓가락을 잡고 종지 안에서 빙글빙글 저어 봐':!d?'회를 끌어다 간장에 푹 찍어 봐':'간장 묻은 회를 화면 아래(내 입)로 가져와!';if(fishes.length)eatPrompt.textContent+=' · 회/잔을 입으로 드래그 · 종지 테두리나 병도 직접 들어 볼 수 있어';
  $('eatRemain').textContent=`내 접시 ${MP.served}점 · 내가 먹은 참치 ${eatenTotal}점`}
 function beep(){if(!snd)return;try{ac=ac||new AudioContext();const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;o.connect(g);g.connect(ac.destination);o.type='triangle';o.frequency.setValueAtTime(205,t);o.frequency.exponentialRampToValueAtTime(100,t+.17);g.gain.setValueAtTime(1e-5,t);g.gain.exponentialRampToValueAtTime(.1,t+.03);g.gain.exponentialRampToValueAtTime(1e-5,t+.24);o.start(t);o.stop(t+.25)}catch(e){}}
 function enter(){
@@ -766,16 +788,23 @@ function enter(){
  if(MP.served<=0){note('내 접시에 회가 없어. 셰프가 참치를 썰어 내놓으면 각자의 접시에 담겨.');return}
  auto=false;bauto.classList.remove('on');dining=true;document.body.classList.add('dining');$('hud').style.display='none';
  dS.visible=true;avatarLayer.visible=false;seatPlaceSettings.visible=false;board.visible=plate.visible=block.visible=kout.visible=false;slices.forEach(s=>s.visible=false);
- prep();resetSauce();home();ctl.enabled=false;cv.style.cursor='grab';
- cam.fov=dFov();cam.position.set(0,6.2,8.4);ctl.target.set(.2,1,.2);ctl.update();cam.updateProjectionMatrix();upd();positionMobileMouth()}
+ prep();resetSauce();home();newPlateV9();ctl.enabled=true;ctl.enablePan=true;cv.style.cursor='grab';
+ setMealViewV9('original');upd();positionMobileMouth()}
 MP.enterDining=()=>{if(!dining)enter()};
-function leave(){if(!dining)return;drag=null;eating=null;dining=false;document.body.classList.remove('dining');chewOv.classList.remove('show');mouthOv.classList.remove('show');
- dS.visible=false;board.visible=plate.visible=kout.visible=true;block.visible=xc<L0-.03;slices.forEach(s=>s.visible=!s.userData.eaten);
+function leave(){if(!dining)return;drag=null;eating=null;propDrinking=null;drinking=null;dining=false;document.body.classList.remove('dining');chewOv.classList.remove('show');mouthOv.classList.remove('show');
+ dS.visible=false;ctl.enablePan=false;board.visible=plate.visible=kout.visible=true;block.visible=xc<L0-.03;slices.forEach(s=>s.visible=!s.userData.eaten);
  $('hud').style.display='flex';if(MP.reconcile)MP.reconcile();ctl.enabled=true;avatarLayer.visible=true;seatPlaceSettings.visible=true;cam.fov=32;cam.updateProjectionMatrix();go('h');cv.style.cursor='default'}
 $('eatBtn').onclick=enter;$('backToCut').onclick=leave;$('newSauce').onclick=resetSauce;
+ const mealCamerasV9={original:[[0,6.2,8.4],[.2,1,.2],null],close:[[-1.2,4.9,6.6],[-1.2,.4,.9],46],side:[[8.9,4.1,3.4],[-.5,.5,.5],48],top:[[0,11,.05],[0,0,.2],55]};
+ function setMealViewV9(key){const v=mealCamerasV9[key]||mealCamerasV9.original;
+  const damp=ctl.enableDamping;ctl.enableDamping=false;
+  cam.position.set(...v[0]);ctl.target.set(...v[1]);cam.fov=v[2]??dFov();cam.updateProjectionMatrix();ctl.update();ctl.enableDamping=damp;
+  document.querySelectorAll('#mealView button').forEach(b=>b.classList.toggle('on',b.dataset.mealView===key));}
+ document.querySelectorAll('#mealView button').forEach(b=>b.onclick=()=>{if(dining)setMealViewV9(b.dataset.mealView)});
+
 $('eatSound').onclick=e=>{snd=!snd;e.currentTarget.textContent=snd?'소리 켜짐':'소리 꺼짐'};
 // 입력
-const rc=new THREE.Raycaster(),nd=new THREE.Vector2(),PH={soy:1.7,wasabi:1.7,chop:.9,fish:1.2,sake:1.7,cup:1};
+const rc=new THREE.Raycaster(),nd=new THREE.Vector2(),PH={soy:1.7,wasabi:1.7,chop:.9,fish:1.2,sake:1.7,cup:1,dish:.6};
 const ray=e=>{const r=cv.getBoundingClientRect();nd.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);rc.setFromCamera(nd,cam)};
 const onPl=(e,y)=>{ray(e);const p=V3();return rc.ray.intersectPlane(new THREE.Plane(UP,-y),p)?p:null};
 const mouthIn=e=>{if(!e)return false;
@@ -788,13 +817,30 @@ const mouthIn=e=>{if(!e)return false;
 const positionMobileMouth=()=>{if(!dining)return;const h=$('eatHud').getBoundingClientRect();
   document.documentElement.style.setProperty('--mealHudOffset',Math.ceil(innerHeight-h.top+6)+'px');};
 addEventListener('resize',positionMobileMouth);
-cv.addEventListener('pointerdown',e=>{mx=e;if(!dining||e.button||eating||drinking)return;ray(e);
- let o=null;for(const x of rc.intersectObjects([jar,wb,cs,skBot,skCup,...fishes],true)){o=x.object;while(o&&!o.userData.k)o=o.parent;if(o)break}
- if(!o){let bd=90;const r=cv.getBoundingClientRect();for(const c of[jar,wb,cs,skBot,skCup,...fishes]){const kk=c.userData.k,w=V3(0,kk==='fish'?.1:kk==='chop'?0:1.2,kk==='chop'?1.8:0);c.localToWorld(w);w.project(cam);const dd=Math.hypot((w.x+1)/2*r.width+r.left-e.clientX,(1-w.y)/2*r.height+r.top-e.clientY);if(dd<bd){bd=dd;o=c}}}
- if(o){const p=onPl(e,PH[o.userData.k]);drag={o,k:o.userData.k,off:p?V3(o.position.x-p.x,0,o.position.z-p.z):V3(),prev:null};cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing'}});
+cv.addEventListener('pointerdown',e=>{mx=e;if(!dining||e.button||eating||drinking||propDrinking)return;ray(e);
+ let o=null;
+ for(const hit of rc.intersectObjects([jar,wb,cs,skBot,skCup,...fishes,dish],true)){
+  let top=hit.object;while(top&&!top.userData.k)top=top.parent;
+  if(top===dish){const dist=Math.hypot(hit.point.x-dish.position.x,hit.point.z-dish.position.z);if(dist<.78||dist>1.35)continue;}
+  if(top){o=top;break;}
+ }
+ if(!o){let bd=45;const r=cv.getBoundingClientRect();for(const c of[jar,wb,cs,skBot,skCup,...fishes]){
+  const kk=c.userData.k,w=V3(0,kk==='fish'?.1:kk==='chop'?0:1.2,kk==='chop'?1.8:0);c.localToWorld(w);w.project(cam);
+  const dd=Math.hypot((w.x+1)/2*r.width+r.left-e.clientX,(1-w.y)/2*r.height+r.top-e.clientY);if(dd<bd){bd=dd;o=c}
+ }}
+ if(o){const p=onPl(e,PH[o.userData.k]||1);drag={o,k:o.userData.k,off:p?V3(o.position.x-p.x,0,o.position.z-p.z):V3(),prev:null,dipped:false};
+  ctl.enabled=false;cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';}
+});
 cv.addEventListener('pointermove',e=>{mx=e});
-const rel=e=>{if(!drag)return;const d=drag;drag=null;warned=0;cv.style.cursor='grab';mouthOv.classList.remove('show');
- if(d.k==='fish'&&mouthIn(e||mx))eating={g:d.o,t:0};if(d.k==='cup'&&mouthIn(e||mx)&&!drinking){drinking={t:0,s0:SA.sake};gulp()}};
+const rel=e=>{if(!drag)return;const d=drag;drag=null;warned=0;ctl.enabled=true;cv.style.cursor='grab';mouthOv.classList.remove('show');
+ const atMouth=mouthIn(e||mx);
+ if(d.k==='fish'&&atMouth)eating={g:d.o,t:0};
+ else if(d.k==='cup'&&atMouth&&!drinking){drinking={t:0,s0:SA.sake};gulp();}
+ else if(d.k==='chop'&&atMouth){eventV9(d.dipped?'soyChop':'dryChop');gulp();}
+ else if(atMouth&&['dish','sake','soy','wasabi'].includes(d.k)){
+   propDrinking={o:d.o,kind:d.k,t:0,level:SA.soy,wasabi:SA.wasabi};gulp();
+ }
+};
 cv.addEventListener('pointerup',rel);cv.addEventListener('pointercancel',rel);
 // 매 프레임
 const qx=new THREE.Quaternion().setFromAxisAngle(V3(1,0,0),Math.PI/2),fq=new THREE.Quaternion(),tq=new THREE.Quaternion(),fwd=V3();
@@ -828,7 +874,7 @@ let pf=false,pourSrc=null,drinking=null,sips=0;const pp=skCup.position.clone(),p
 const stopPour=()=>{if(pourSrc){try{pourSrc.stop()}catch(e){}pourSrc=null}};
 function gulp(){try{const c=actx(),t=c.currentTime;for(let i=0;i<3;i++){const o=c.createOscillator(),g=c.createGain(),s=t+i*.22;o.type='sine';o.frequency.setValueAtTime(220-i*20,s);o.frequency.exponentialRampToValueAtTime(90,s+.15);g.gain.setValueAtTime(1e-4,s);g.gain.exponentialRampToValueAtTime(.25,s+.03);g.gain.exponentialRampToValueAtTime(1e-4,s+.18);o.connect(g);g.connect(c.destination);o.start(s);o.stop(s+.2)}}catch(e){}}
 const pick=a=>a[Math.random()*a.length|0];
-function sipMsg(l){sips++;let m;
+function sipMsg(l){sips++;eventV9('cup',{level:l});return;let m;
  if(l<.08)m=pick(['빈 잔이야… 입만 적셨다','공기를 마셨다. 분위기에 취했나?','잔이 비었어. 병부터 들어 줘!']);
  else if(sips>=4&&Math.random()<.6)m=pick(['슬슬 얼굴이 빨개진다','어… 방이 살짝 돌아가는 것 같은데?','내가 지금 몇 잔째지…','취한 거 아냐. 기분 좋은 거야']);
  else if(eatenTotal>0&&Math.random()<.35)m='회 한 점에 사케 한 잔, 이게 인생이지';
@@ -873,6 +919,208 @@ FL.n.push(
  ['비린 향은 없고 산뜻한 감칠맛만 있다… 신선한 참치의 장점이 살아 있어.','청명…'],
  ['시간이 지나도 혀끝에서 사라지지 않는 단맛. 이 한 점은 기억에 남겠어.','두근…']
 );
+
+// V9: shuffled no-repeat dialogue decks + actions chained across a single plate.
+const V9={bags:new Map(),last:new Map(),firstOfPlate:true,lastPlateFirst:'',plateNumber:0,
+  history:[],fishRun:0,drinkRun:0,bottleRun:0,soyRun:0,wasabiRun:0,lastFood:0,lastDrink:0,lastEvent:'',nonce:0,
+  lastPlateQty:0, lastTasteThickness:.22};
+function newPlateV9(){V9.plateNumber++;V9.firstOfPlate=true;V9.fishRun=0;V9.lastPlateQty=MP.served;}
+function deckV9(key,choices){
+ if(!choices.length)return ['잠시 맛을 음미해 본다…','음미…'];
+ let bag=V9.bags.get(key);
+ if(!bag||!bag.length){
+  bag=choices.map((_,i)=>i);
+  for(let i=bag.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[bag[i],bag[j]]=[bag[j],bag[i]];}
+  const previous=V9.last.get(key);
+  if(bag.length>1&&choices[bag[bag.length-1]][0]===previous){
+   [bag[bag.length-1],bag[0]]=[bag[0],bag[bag.length-1]];
+  }
+ }
+ let index=bag.pop(),msg=choices[index];
+ if(V9.firstOfPlate && msg[0]===V9.lastPlateFirst && choices.length>1){
+  let i=bag.findIndex(j=>choices[j][0]!==msg[0]);
+  if(i>=0){bag.unshift(index);index=bag.splice(i,1)[0];msg=choices[index];}
+  else{index=(index+1)%choices.length;msg=choices[index];bag=bag.filter(j=>j!==index);}
+ }
+ V9.last.set(key,msg[0]);V9.bags.set(key,bag);
+ if(V9.firstOfPlate){V9.lastPlateFirst=msg[0];V9.firstOfPlate=false;}
+ return msg;
+}
+const V9LINES={
+ plain:[
+ ['이 담백함… 간장 없이도 단맛이 오래 남아.','사르르…'],['씹을수록 결 사이에서 깊은 감칠맛이 배어 나온다.','스으윽…'],['차가운 첫맛과 서서히 살아나는 고소한 여운…','여운…'],['입에 넣자마자 흩어지는 섬세한 결, 이게 참치 본연의 맛이지.','반짝!'],['아무것도 안 찍었는데 맛의 윤곽이 이렇게 뚜렷하다니.','고요…'],['한 점의 뒤에 이렇게 긴 여운이 숨어 있었군.','음미…'],['처음에는 잠잠하다. 그런데 세 번째 씹음에서 단맛이 폭발해!','파앗!'],['이건 서두르면 안 되는 맛이야. 천천히 씹어야 진짜가 보이지.','두근…']],
+ soy:[
+ ['간장의 짠맛이 한발 물러서자 참치의 단맛이 앞으로 나온다.','조화!'],['혀끝에서는 간장, 입안 깊숙이선 고소한 지방의 향…','스으읍…'],['단 한 번 찍었을 뿐인데 맛의 윤곽이 선명해졌어!','번쩍!'],['간장의 향이 참치의 감칠맛을 한 단계 끌어올린다.','촤악!'],['첫맛은 짭짤하지만 끝에는 바다의 단맛만 남네.','여운…'],['간장은 주연이 아니라 조명이군. 참치가 더 또렷하게 보인다.','두둥!']],
+ wasabi:[
+ ['알싸한 향이 코를 스친 뒤 지방의 고소함만 또렷이 남는다!','찌잉!'],['와사비가 열어 놓은 길로 참치의 감칠맛이 밀려온다…','파앗!'],['순간 코끝이 찡했지만, 그 뒤의 단맛이 놀라워.','후우…'],['이 강렬함 뒤에 이렇게 부드러운 여운이 숨어 있었어?','반전!'],['와사비가 느끼함을 베어 내니 참치의 결이 살아난다.','스윽!']],
+ both:[
+ ['간장의 깊이, 와사비의 향, 참치의 고소함… 세 겹의 파도가 온다!','삼중주!!'],['짠맛은 시작에 불과해. 뒤에서 알싸함과 단맛이 교차한다!','촤아악!!'],['지방의 부드러움을 와사비가 잡고, 간장이 그 끝을 맺는다.','완벽!'],['첫맛과 끝맛이 전혀 달라… 이 한 점에 이야기가 있어!','쿠궁!'],['간장과 와사비가 맞물려 참치의 속맛을 깨웠다!','파아앗!'],['세 가지 맛이 서로 앞서지 않아. 절묘한 균형이군.','정적…']],
+ thin:[['종잇장처럼 얇은데 향의 여운은 이렇게 길다니!','사르르…'],['얇게 썬 한 점이 혀에서 순식간에 풀린다.','스윽!'],['씹기도 전에 녹아버려… 그런데 단맛은 남아!','후우…'],['얇아서 오히려 결의 섬세함이 선명하다!','반짝!']],
+ thick:[['두툼하게 씹는 사이 지방의 고소함이 한 번 더 터진다!','와작!'],['묵직한 식감 뒤에 달큰한 감칠맛이 따라온다.','쿵!'],['이 두께는 서두르면 안 돼. 씹을수록 맛이 달라져!','음미…'],['한 입의 무게감이 다르다… 참치의 결이 살아 있어!','두둥!']],
+ fishAfterSake:[['사케의 쌀 향이 사라지기도 전에 참치의 고소함이 밀려와!','교차!!'],['술의 깔끔한 뒷맛 위로 참치의 부드러운 감칠맛이 쌓인다.','여운…'],['한 모금 다음 한 점… 두 맛이 서로를 비추는군.','찰나!']],
+ sakeAfterFish:[['참치의 기름진 여운을 사케의 쌀 향이 씻어 낸다…','스르륵…'],['방금 먹은 참치의 단맛과 잔 속의 향이 이어진다.','두둥!'],['한 점의 바다 다음 한 모금의 들판… 기묘한 조합이군.','파앗!']],
+ fishAfterSoyShot:[['아까 간장만 마신 혀가 아직 짜릿한데 참치가 구원하러 왔어!','구원!'],['짠맛의 폭풍 뒤에 참치 한 점… 감칠맛이 선명해진 건 착각인가?!','띠용!']],
+ fishAfterWasabi:[['와사비의 폭풍이 아직 코끝에 남아… 참치가 그 열기를 달랜다.','후우…'],['아까의 알싸한 충격이 사라지자 참치의 고소함이 돌아왔어.','안도…']],
+ fishChain:[['두 점째… 아니, 세 점째인가? 한 점마다 지방의 결이 달라!','집중!'],['젓가락을 멈추려 했는데 다음 한 점의 여운이 또 궁금해졌어.','두근…'],['같은 참치인데 한 점마다 다른 이야기라니…','감탄!']],
+ cup:[['잔에서 은은한 쌀 향이 지나가고, 입안은 맑게 정리된다.','꿀꺽…'],['부드러운 첫 향, 조용히 이어지는 끝맛…','스으…'],['참치의 향을 방해하지 않는 차분한 맛이군.','여운…'],['천천히 마시니 단맛과 산뜻함의 차이가 느껴진다.','음미…']],
+ cupEmpty:[['…빈 잔이다. 마신 건 공기뿐이다.','텅—'],['오오, 무미무취! 아니, 그냥 잔이 비었잖아!','띠용!'],['한 방울도 없는 잔을 그렇게 정중하게 들다니.','민망…']],
+ drinkStreak2:[['잔만 두 번째… 참치는 아직 한 점도 안 먹었잖아!','어라?'],['식사보다 건배가 먼저인 손님이군…','찰랑…'],['아직도 회는 그대로인데 잔만 바쁘다.','꿀꺽!']],
+ drinkStreak3:[['연거푸 마셨더니 고개가 살짝 기운다. 이제 물 한 잔이 필요해.','휘청…'],['회는 손도 안 댔는데 잔만 세 번 비웠어?!','쿠궁!'],['이쯤에서 물을 마시고 천천히 쉬어 가자…','후우…']],
+ drinkStreak4:[['이제 맛은커녕 몇 잔째인지도 헷갈린다… 잠깐 쉬자.','빙글…'],['식사하러 왔는데 잔 비우기 대회가 되어 버렸잖아!','띠용!'],['사케잔은 내려놓고 물을 찾는 게 좋겠어.','휴식!']],
+ bottle:[['잔을 건너뛰고 도쿠리를 입으로?! 카운터가 순간 조용해졌다.','쿠궁!!'],['병째 들이켜다니… 셰프의 눈동자가 흔들린다!','웅성…'],['도쿠리가 잔으로 착각한 모양이다. 이게 무슨 예절 파괴야!','와장창?!'],['잠깐, 술병은 원래 따르는 물건이잖아?!','띠용!!']],
+ bottleRepeat:[['또 병째?! 이쯤 되면 잔이 장식품이군…','덜컹!'],['두 번째로 병을 들자 셰프가 조용히 물잔을 내민다.','스윽…'],['병만 바쁘고 음식은 그대로… 오늘의 주인공이 바뀌었다.','쿠궁!']],
+ soyChop:[['간장만 찍은 젓가락을 입으로…? 짠맛의 단독 공연이다!','짜릿!!'],['참치는 어디 가고 간장만 시식하는 거야?!','띠용!'],['나무젓가락의 향에 간장 풍미라… 별난 미식가군.','흠…'],['간장을 평가하는 건 좋은데, 참치는 아직 접시 위잖아!','찰칵!']],
+ dryChop:[['빈 젓가락을 입에?! 침묵만이 흐른다…','고요…'],['아직 아무것도 집지 않았는데 씹을 준비부터 했어!','띠용!']],
+ dishEmpty:[['빈 종지를 벌컥… 도자기 향이라도 마시려는 건가?','땡그랑!'],['종지 바닥만 반짝인다. 먹을 간장이 없어!','텅…']],
+ dishSoy:[['종지째 간장을 마셔 버렸다! 짠맛이 혀를 덮쳤어!!','짜아악!!'],['간장이 소스가 아니라 주연이 되어 버렸군… 물, 물 좀!','쿠궁!!'],['짭짤하다 못해 혀가 잠깐 멈춘 기분…','찌릿!'],['종지를 들어 한 번에 마시다니… 손님, 간장은 찍어 먹는 거예요!','두둥!']],
+ dishBoth:[['와사비 섞인 간장을 통째로?! 코끝까지 확 올라온다!!','찌이잉!!'],['짜고 알싸한 이중 충격! 참치는 아직 한 점도 안 먹었는데?!','쾅!!'],['간장과 와사비를 종지째 마셔 버렸어… 셰프가 물컵을 찾는다!','화들짝!!']],
+ soyBottle:[['간장통을 입에 대다니! 회가 아니라 간장 원액을 시음하겠다고?!','짜아악!!'],['설마 간장병을 그냥 마실 줄이야… 짠맛이 너무 강하다!','쿠궁!!'],['그건 음료수가 아니라 간장이라고! 물을 마셔야겠어.','화들짝!']],
+ soyBottleAgain:[['또 간장통이야?! 셰프가 황급히 간장병을 감춘다.','스윽!'],['짠맛에 익숙해진 게 아니야… 그만하고 참치를 먹어!','띠용!!']],
+ wasabiTube:[['와사비통을 입에?! 코끝에서 번개가 친다!!!','찌이잉!!'],['이 알싸함은 반찬이 아니라 충격파다… 물이 필요해!','번쩍!!'],['참치 없이 와사비만 먹다니! 눈물이 찔끔 난다!','눈물!!']],
+ wasabiTubeAgain:[['또 와사비통?! 이미 눈가가 촉촉한데도?!','오싹!'],['셰프가 와사비를 살짝 멀리 치운다.','슬쩍…']],
+ soyThenWasabi:[['간장통 다음 와사비통… 맛의 순서가 거꾸로잖아?!','쿠궁!!'],['짠맛의 폭풍 위로 알싸한 번개가 내려쳤다!','쾅!!']],
+ wasabiThenSake:[['와사비의 알싸함이 가라앉기도 전에 사케라니… 미각이 혼란스럽다!','휘청!'],['코끝의 와사비 향과 술의 쌀 향이 이상하게 엇갈린다.','어질…']],
+ sauceChaos:[['간장, 와사비, 술병까지… 셰프가 물과 휴식을 권한다.','경악!!'],['참치를 먹는 게임이 맞나? 병과 통이 더 빨리 움직이는군…','혼돈!!']],
+ finishPlate:[['접시가 깨끗해졌다… 마지막 한 점의 여운이 오래 남는다.','완식!'],['마지막 조각이 사라졌다. 남은 건 간장의 향과 만족감뿐.','고요…'],['끝까지 먹고 나니 처음 한 점의 맛이 다시 떠오른다.','여운…']]
+};
+// Extended V9 tasting palette: variety follows what the player actually did.
+V9LINES.fishAfterChop=[
+ ['방금 간장만 맛본 뒤에 참치를 올리니, 짠맛이 드디어 제자리를 찾았어!','귀환!'],
+ ['젓가락 끝에 남은 간장 향이 이 한 점의 단맛과 맞닿는다.','스윽…'],
+ ['간장부터 맛보는 손님답군… 이제야 주연이 등장했다!','두둥!']
+];
+V9LINES.plain.push(
+ ['혀끝에서 결이 차분히 풀린다… 과장하지 않는 맛의 품격이 있어.','고요…'],
+ ['겉은 단단한데 속은 부드러워. 온도가 바뀌자 풍미가 살아나네.','사아…'],
+ ['단맛이 조용히 시작해서 고소한 향으로 끝나… 기분 좋은 반전이군.','반전!'],
+ ['아무 양념도 없는 한 점. 그래서 작은 차이까지 전부 느껴진다.','집중…'],
+ ['좋은 식감이라는 건 씹는 순간보다 삼킨 뒤에 기억에 남는 법이지.','여운…']
+);
+V9LINES.soy.push(
+ ['간장은 입구를 열었을 뿐… 참치의 지방이 이야기의 중심이야.','선명!'],
+ ['살짝 젖은 단면에서 짠맛이 지나가고 은은한 단맛이 따라와.','한 겹…'],
+ ['너무 많이 찍지 않은 게 정답이었군. 맛이 서로 가리지 않아.','절제!'],
+ ['간장 향이 사라진 다음에도 참치의 맛이 남아… 잘 어울려.','후우…']
+);
+V9LINES.wasabi.push(
+ ['코끝은 강렬한데 혀에는 참치의 단맛만 남아… 이상한 조화야.','찌릿!'],
+ ['한순간 매섭게 지나가더니 기름진 여운을 말끔히 정리했어.','스윽!'],
+ ['와사비가 너무 앞서지 않아. 참치와 거리를 잘 맞추고 있어.','균형!']
+);
+V9LINES.both.push(
+ ['처음에는 간장, 곧이어 와사비… 마지막에 참치가 조용히 승리한다.','역전!!'],
+ ['서로 다른 세 향이 한 점에서 만나는데도 하나도 튀지 않다니.','조화!!'],
+ ['코를 지난 알싸함과 혀에 남은 고소함이 동시에 끝나는군…','정점!'],
+ ['와사비가 지나간 자리에 간장의 깊이가 남아. 이건 한 점의 설계도야.','설계!'],
+ ['씹을수록 지방이 풀리고, 그때마다 양념의 인상이 달라진다!','변화!']
+);
+V9LINES.thin.push(
+ ['얇은 한 점인데 혀에 닿는 면적만큼 풍미가 넓게 번진다.','사르륵!'],
+ ['섬세하게 썬 만큼 온도가 빠르게 바뀐다. 그래서 단맛이 먼저 오는군.','번뜩!'],
+ ['칼이 만든 두께가 식감을 이렇게 바꾸다니… 부드러운 찰나야.','찰나!']
+);
+V9LINES.thick.push(
+ ['결을 몇 번이나 씹어야 풀리는 이 묵직함… 얇은 회와는 다른 매력이야.','묵직!'],
+ ['중심까지 씹는 동안 고소한 향이 길게 이어져.','꾸욱…'],
+ ['한 점의 두께가 긴 여운이 되는군. 천천히 먹는 편이 좋겠어.','천천히…']
+);
+V9LINES.fishChain.push(
+ ['방금 것과 이번 것의 결이 달라… 회 한 접시에도 작은 굴곡이 있군.','탐구!'],
+ ['네 번째 한 점에서 처음에는 몰랐던 단맛이 느껴지기 시작했다.','발견!'],
+ ['참치 한 접시를 이렇게 오래 탐구하게 될 줄은 몰랐어.','연구…']
+);
+V9LINES.sakeAfterFish.push(
+ ['방금 회의 뒷맛이 잔의 향과 맞닿아서 천천히 사라진다.','스으…'],
+ ['입안에 남은 지방의 향을 쌀 향이 살며시 정리해 줘.','정돈…']
+);
+V9LINES.fishAfterSake.push(
+ ['잔이 남긴 은은한 쌀 향 끝에 참치의 고소함이 이어져.','이어짐…'],
+ ['사케 다음의 참치 한 점, 입안의 온도부터 달라지는군.','전환!']
+);
+V9LINES.cup.push(
+ ['향이 강하게 튀지 않고 잔잔하게 남아… 음식 곁에 두기 좋아.','잔잔…'],
+ ['잔을 내려놓고서야 마지막에 남는 쌀의 단맛이 느껴진다.','후우…'],
+ ['마시기 전의 향과 마신 뒤의 향이 조금 다르군.','음미…']
+);
+V9LINES.drinkStreak3.push(
+ ['세 번째 잔에서 잔이 조금 무겁게 느껴져. 이쯤에서 쉬어야겠어.','잠깐!'],
+ ['셰프가 물컵을 슬쩍 밀어 준다… 참치는 아직 손도 안 댔는데.','스윽…']
+);
+V9LINES.drinkStreak4.push(
+ ['잔 속 맛의 차이가 잘 안 느껴진다… 더 마시기보다 잠시 쉬자.','휴우…'],
+ ['이번에는 잔을 내려놓는다. 요리는 천천히 즐기는 게 제맛이지.','멈춤!']
+);
+V9LINES.bottle.push(
+ ['잔은 멀쩡히 있는데 술병만 사라졌다?! 손님, 잠깐요!','경악!!'],
+ ['도쿠리를 입으로 가져가자 카운터 전체의 시선이 한곳에 모인다.','시선 집중!']
+);
+V9LINES.soyChop.push(
+ ['젓가락을 간장에 찍고 고개를 끄덕인다… 참치는 안 먹고?!','띠용!!'],
+ ['간장 향만 묻은 젓가락으로 맛을 본다니. 엄격한 조미료 심사위원이군.','심사!']
+);
+V9LINES.dishSoy.push(
+ ['간장을 종지째 들어 올렸어?! 고소한 참치 대신 짠맛만 남아.','짜릿!!'],
+ ['종지 바닥이 보일 때까지 마셔 버렸어… 이건 미식인가 실수인가!','후회…']
+);
+V9LINES.dishBoth.push(
+ ['짠맛 뒤에 알싸함까지 한꺼번에 몰려온다. 물이 간절해진다.','우르릉!!'],
+ ['종지 하나를 비웠을 뿐인데 표정이 이렇게 바뀔 줄이야…','혼란!!']
+);
+V9LINES.soyBottle.push(
+ ['간장병을 직접 들이켜니 혀에서 모든 맛이 잠시 사라졌다…','징—'],
+ ['손님, 그건 음료가 아니에요! 셰프가 황급히 물컵을 가져온다.','번쩍!']
+);
+V9LINES.wasabiTube.push(
+ ['와사비통을 직접?! 알싸한 향이 콧등까지 솟구친다!','파아앗!!'],
+ ['코끝이 얼얼해지자 더는 참치의 미묘한 맛이 안 느껴져…','눈물…']
+);
+
+function eventV9(kind,detail={}){
+ const now=Date.now(),last=V9.lastEvent;
+ V9.history.push({kind,time:now});V9.history=V9.history.filter(v=>now-v.time<26000);
+ const recent=(type,ms=13500)=>V9.history.slice(0,-1).some(v=>v.kind===type&&now-v.time<ms);
+ let key=kind,follow=null;
+ if(kind==='fish'){
+  V9.fishRun++;V9.drinkRun=0;V9.lastFood=now;
+  if(recent('soyBottle')||recent('dishSoy')||recent('dishBoth'))key='fishAfterSoyShot';
+  else if(recent('soyChop'))key='fishAfterChop';
+  else if(recent('wasabiTube'))key='fishAfterWasabi';
+  else if(recent('cup')||recent('bottle'))key='fishAfterSake';
+  else if(V9.fishRun>=3)key='fishChain';
+  else if(detail.thickness<=.18)key='thin';
+  else if(detail.thickness>=.34)key='thick';
+  else key=detail.soy&&detail.wasabi?'both':detail.wasabi?'wasabi':detail.soy?'soy':'plain';
+  if(detail.lastPiece)follow='finishPlate';
+ }else if(kind==='cup'||kind==='bottle'){
+  V9.drinkRun++;V9.lastDrink=now;V9.fishRun=0;
+  if(kind==='cup'&&(!detail.level||detail.level<.07)){V9.drinkRun--;key='cupEmpty';}
+  else if(kind==='bottle'){V9.bottleRun++;key=V9.bottleRun>1?'bottleRepeat':'bottle';}
+  else if(recent('soyBottle')&&recent('wasabiTube'))key='sauceChaos';
+  else if(recent('wasabiTube'))key='wasabiThenSake';
+  else if(recent('fish',12000))key='sakeAfterFish';
+  else if(V9.drinkRun>=4)key='drinkStreak4';
+  else if(V9.drinkRun===3)key='drinkStreak3';
+  else if(V9.drinkRun===2)key='drinkStreak2';
+  else key='cup';
+ }else if(kind==='soyBottle'){
+  V9.soyRun++;key=V9.soyRun>1?'soyBottleAgain':'soyBottle';
+ }else if(kind==='wasabiTube'){
+  V9.wasabiRun++;key=recent('soyBottle')?'soyThenWasabi':V9.wasabiRun>1?'wasabiTubeAgain':'wasabiTube';
+ }else if(kind==='dish'){
+  key=detail.soy>0.12?(detail.wasabi>0.1?'dishBoth':'dishSoy'):'dishEmpty';
+ }else if(kind==='soyChop')key='soyChop';
+ else if(kind==='dryChop')key='dryChop';
+ V9.lastEvent=kind;
+ if(['bottle','soyBottle','wasabiTube','dishBoth','dishSoy','drinkStreak3','drinkStreak4'].includes(key)){
+  const flash=$('v9Flash');flash.classList.remove('burst');void flash.offsetWidth;flash.classList.add('burst');
+ }
+ const quote=deckV9(key,V9LINES[key]||V9LINES.plain);
+ shout(quote[0],quote[1],kind==='cup'||kind==='bottle'?'sake':kind==='wasabiTube'?'wa':'');
+ const token=++V9.nonce;
+ if(follow){setTimeout(()=>{if(dining&&token===V9.nonce){const f=deckV9(follow,V9LINES[follow]);note(f[0]);}},1450);}
+ if(V9.drinkRun>=3&&kind==='cup')note('연속으로 마셨네. 잠깐 쉬고 물을 마시는 게 좋아.');
+}
+
 let shId=0;
 function shout(msg,fx,tone){const root=$('shout'),id=++shId,dir=Math.random()<.5?-1:1,T=2500,mk2=(c,t)=>{const e=document.createElement('div');e.className=c;if(t)e.textContent=t;return e};
  root.replaceChildren();const ln=mk2('ln'),row=mk2('row'),bn=mk2('bn'+(tone?' '+tone:''),msg),f=mk2('fx',fx);row.appendChild(bn);f.style[dir>0?'left':'right']='5%';root.append(ln,row,f);
@@ -892,7 +1140,7 @@ function sakeShout(l){let a;
  else a=pick([['크으으— 이것이 정종의 맛!! 목구멍을 타고 비단이 흐른다!!','꿀꺽!!'],['입 안에 쌀밭이 펼쳐진다…! 황금빛 이삭이 바람에 일렁인다!!','사아아…!!'],['후지산 정상에서 아침 해를 맞는 기분…! 맑고, 깨끗하고, 깊다…!!','파아앗!!'],['이 술… 참치와 만나기 위해 태어났다!!','두둥!!'],['캬아아—!! 한 잔에 오장육부가 정화된다!!','캬아!!']]);
  shout(a[0],a[1],'sake')}
 const dFov=()=>Math.min(80,Math.max(50,2*Math.atan(.86/(innerWidth/innerHeight))*57.3));
-addEventListener('resize',()=>{if(dining){cam.fov=dFov();cam.updateProjectionMatrix()}});
+addEventListener('resize',()=>{if(dining&&document.querySelector('#mealView button[data-meal-view=original]').classList.contains('on')){cam.fov=dFov();cam.updateProjectionMatrix()}});
 function sakeDrag(o,u,p,dt,kd){const c=skCup.position,d=Math.hypot(c.x-p.x,c.z-p.z),nf=ss((4-d)/1.2);
  u.f+=(nf-u.f)*Math.min(1,dt*6);const f=u.f,q=V3(p.x+drag.off.x*(1-nf),0,p.z+drag.off.z*(1-nf));
  if(d>.3)o.rotation.y+=wrap(Math.atan2(p.z-c.z,c.x-p.x)-o.rotation.y)*kd;
@@ -927,12 +1175,17 @@ function sakeTick(dt){const w=pf&&SA.sake<1;pf=false;sstream.visible=false;
 eatUpdate=dt=>{
  if(!dining)return;clk+=dt;fq.copy(cam.quaternion).multiply(qx);sakeTick(dt);
  const k=1-Math.exp(-dt*9),kd=Math.min(1,dt*8);
- for(const o of[jar,wb,cs,skBot,skCup]){if(o===cs&&((drag&&drag.k==='fish')||eating)){const g=(drag&&drag.k==='fish')?drag.o:eating.g;o.position.lerp(V3(g.position.x,g.position.y+.12,g.position.z),k);o.rotation.x+=(-.55-o.rotation.x)*k;o.rotation.y+=(0-o.rotation.y)*k;o.rotation.z+=(0-o.rotation.z)*k;continue}if((drag&&drag.o===o)||(o===skCup&&drinking))continue;const u=o.userData;o.position.lerp(u.hp,k);o.rotation.x+=(u.hr.x-o.rotation.x)*k;o.rotation.z+=(u.hr.z-o.rotation.z)*k;o.rotation.y+=wrap(u.hr.y-o.rotation.y)*k;u.f=0}
+ for(const o of[jar,wb,cs,skBot,skCup,dish]){if(o===cs&&((drag&&drag.k==='fish')||eating)){const g=(drag&&drag.k==='fish')?drag.o:eating.g;o.position.lerp(V3(g.position.x,g.position.y+.12,g.position.z),k);o.rotation.x+=(-.55-o.rotation.x)*k;o.rotation.y+=(0-o.rotation.y)*k;o.rotation.z+=(0-o.rotation.z)*k;continue}if((drag&&drag.o===o)||(o===skCup&&drinking)||(propDrinking&&propDrinking.o===o))continue;const u=o.userData;o.position.lerp(u.hp,k);o.rotation.x+=(u.hr.x-o.rotation.x)*k;o.rotation.z+=(u.hr.z-o.rotation.z)*k;o.rotation.y+=wrap(u.hr.y-o.rotation.y)*k;u.f=0}
  for(const g of fishes){if((drag&&drag.o===g)||(eating&&eating.g===g))continue;g.position.lerp(g.userData.hp,k);g.quaternion.slerp(g.userData.hq,k)}
  stream.visible=wstr.visible=false;wbody_squish(false);
  if(drag&&mx){const o=drag.o,K=drag.k,u=o.userData,p=onPl(mx,PH[K]);
   if(p){const d=Math.hypot(DISH.x-p.x,DISH.z-p.z),nf=ss((4-d)/1.2),q=V3(p.x+drag.off.x*(1-nf),0,p.z+drag.off.z*(1-nf));
-   if(K==='sake'){sakeDrag(o,u,p,dt,kd)}else if(K==='cup'){cupDrag(o,p,dt)}else if(K==='soy'||K==='wasabi'){
+   if(K==='sake'){if(mouthIn(mx)){const tg=rc.ray.origin.clone().addScaledVector(rc.ray.direction,2);o.position.lerp(tg,Math.min(1,dt*8));o.rotation.z=-.8;mouthOv.classList.add('show');}else sakeDrag(o,u,p,dt,kd)}
+    else if(K==='cup'){cupDrag(o,p,dt)}
+    else if(K==='dish'){const near=ss((mx.clientY/innerHeight-.53)/.26);ray(mx);const face=rc.ray.origin.clone().addScaledVector(rc.ray.direction,1.8);
+       o.position.lerp(V3(p.x+drag.off.x,0.5,p.z+drag.off.z).lerp(face,near),Math.min(1,dt*13));o.rotation.z=-near*.75;mouthOv.classList.toggle('show',mouthIn(mx));}
+    else if(K==='soy'||K==='wasabi'){
+     if(mouthIn(mx)){ray(mx);const face=rc.ray.origin.clone().addScaledVector(rc.ray.direction,1.7);o.position.lerp(face,Math.min(1,dt*12));o.rotation.z=-1.1;mouthOv.classList.add('show');}else{
     u.f+=(nf-u.f)*Math.min(1,dt*6);const f=u.f;
     if(d>.3)o.rotation.y+=wrap(Math.atan2(p.z-DISH.z,DISH.x-p.x)-o.rotation.y)*kd;
     o.rotation.z=-u.tilt*f;const off=u.tip.clone().applyEuler(o.rotation);
@@ -941,11 +1194,12 @@ eatUpdate=dt=>{
     if(K==='soy'&&over&&SA.soy<1){SA.soy=Math.min(1,SA.soy+dt*.4);{const ex=V3(tip.x-DISH.x,0,tip.z-DISH.z),l=ex.length();if(l>.8)ex.multiplyScalar(.8/l);link(stream,tip,V3(DISH.x+ex.x,lvY()+.02,DISH.z+ex.z),.05+.012*Math.sin(clk*40))}}
     if(K==='wasabi'&&over){if(SA.soy<.25){if(!warned){note('간장을 먼저 따라 줘');warned=1}}
      else if(SA.wasabi<1){SA.wasabi=Math.min(1,SA.wasabi+dt*.5);link(wstr,tip,V3(bl.position.x,bl.position.y+.2,bl.position.z),.07);wbody_squish(true)}}
+    }
    }else if(K==='chop'){
     const dip=d<.85&&SA.soy>.15;o.position.x=q.x;o.position.z=q.z;o.position.y+=((dip?.32:.9)-o.position.y)*Math.min(1,dt*10);
     o.rotation.x=-.55;o.rotation.y=0;o.rotation.z=0;
     if(dip&&drag.prev){const mv=Math.min(.5,Math.hypot(q.x-drag.prev.x,q.z-drag.prev.z));SA.sw+=mv*1.3;if(SA.wasabi>.1)SA.mix=Math.min(1,SA.mix+mv*.12);if(mv>.01)o.rotation.x+=Math.sin(clk*10)*.03}
-    drag.prev=q;
+    drag.prev=q;drag.dipped=drag.dipped||dip;mouthOv.classList.toggle('show',!!drag.dipped&&mouthIn(mx));
    }else{
     const u2=o.userData,py=mx.clientY/innerHeight,t=ss((py-.55)/.3),dip=d<1.35&&SA.soy>.1&&t<.75;
     ray(mx);const face=rc.ray.origin.clone().addScaledVector(rc.ray.direction,1.7),tg=V3(q.x,dip?(d>.9?.7:.4):1.25,q.z).lerp(face,t);
@@ -955,19 +1209,28 @@ eatUpdate=dt=>{
      else{u2.wet=Math.min(1,u2.wet+dt*2.5);if(SA.mix>.6)u2.wa=Math.min(1,u2.wa+dt*2*SA.wasabi)}}
     mouthOv.classList.toggle('show',mouthIn(mx));
    }}}
+ if(propDrinking){const d=propDrinking,o=d.o;d.t+=dt;
+  const dir=cam.getWorldDirection(fwd),aim=cam.position.clone().addScaledVector(dir,1.6).addScaledVector(UP.clone().applyQuaternion(cam.quaternion),-.35);
+  o.position.lerp(aim,Math.min(1,dt*11));o.rotation.z+=((-1.25)-o.rotation.z)*Math.min(1,dt*10);
+  if(d.t>.88){propDrinking=null;
+   if(d.kind==='dish'){eventV9('dish',{soy:d.level,wasabi:d.wasabi});if(d.level>.12){SA.soy=0;SA.wasabi=0;SA.mix=0;SA.sw=0;}}
+   else if(d.kind==='sake'){sips++;eventV9('bottle');}
+   else if(d.kind==='soy')eventV9('soyBottle');
+   else if(d.kind==='wasabi')eventV9('wasabiTube');
+  }}
  if(eating){const e=eating,g=e.g;e.t+=dt;
   if(e.t<.55){cam.getWorldDirection(fwd);const tg=cam.position.clone().addScaledVector(fwd,1).addScaledVector(UP.clone().applyQuaternion(cam.quaternion),-.32);g.position.lerp(tg,Math.min(1,dt*10));g.quaternion.slerp(fq,Math.min(1,dt*10))}
   else{const eatenIndex=fishes.indexOf(g);dS.remove(g);fishes.splice(eatenIndex,1);eatenTotal++;
   MP.served=Math.max(0,MP.served-1);
   MP.plateCuts?.splice(Math.max(0,eatenIndex),1);
-  MP.send({type:'eat',index:Math.max(0,eatenIndex)});chewT=1.5;{const u=g.userData,s=u.wet>.45,w=u.wa>.3,L=s&&w?['이 맛이지! 간장+와사비 황금 조합','코끝은 찡, 입은 행복','미쳤다, 이게 회 먹는 맛이다','고소하고 짭짤하고 알싸하고 완벽','셰프 불러, 팁 줘야겠다']:w?['으악 코가 정수리까지… 근데 맛있어','와사비 직격! 눈물 핑, 정신 번쩍','코가 뻥— 우주가 보인다','매운데 자꾸 생각나는 맛','찡— 하고 올라왔다, 지금 내 코 괜찮아?']:s?['간장 한 방울의 마법, 감칠맛 폭발','짭짤+고소, 이 조합은 반칙','참치와 간장은 서로를 위해 태어났다','이래서 간장이 괜히 있는 게 아니야','젓가락이 멈추질 않는다']:['오, 참치가 혀에서 녹았다','이건 그냥 먹어도 인정','바다의 맛이 이렇게 담백하다니','씹기도 전에 사라졌다 — 사기급','이 한 점으로 오늘 하루 정리 완료'];fishShout(s,w)}beep();eating=null;mouthOv.classList.remove('show')}}
+   MP.send({type:'eat',index:Math.max(0,eatenIndex)});chewT=1.5;eventV9('fish',{soy:g.userData.wet>.45,wasabi:g.userData.wa>.3,thickness:Number(g.userData.thickness)||.22,lastPiece:MP.served===0});beep();eating=null;mouthOv.classList.remove('show')}}
  if(MP.reconcile)MP.reconcile();
   fishes.forEach(g=>{const u=g.userData,m=u.wm.material;m.opacity=Math.max(u.wet*.55,u.wa*.5);m.color.setHex(u.wa>.3?(u.wet>.3?0x3a3510:0x86b02e):0x2a1206)});
  // 수면: 간장이 차오르고, 젓는 만큼 와사비 섞인 사진이 번짐
  const y=lvY(),rIn=.68+(y-.14)/.58*.47-.03,r=.3+(rIn-.3)*Math.min(1,SA.soy*2.5),wm=Math.min(1,SA.wasabi*1.4);
- surf.forEach((o,i)=>{o.visible=SA.soy>.01;o.position.y=y+.004+i*.003;o.scale.setScalar(r);o.rotation.set(-Math.PI/2,0,SA.sw*[.6,.9,1.2][i]+i*1.3)});
+ surf.forEach((o,i)=>{o.visible=SA.soy>.01;o.position.set(dish.position.x,y+.004+i*.003+dish.position.y,dish.position.z);o.scale.setScalar(r);o.rotation.set(-Math.PI/2,0,SA.sw*[.6,.9,1.2][i]+i*1.3)});
  surf[1].material.opacity=Math.min(1,SA.mix*2)*wm;surf[2].material.opacity=Math.max(0,SA.mix*2-1)*wm;
- bl.visible=SA.wasabi>.02;bl.scale.setScalar(Math.max(.01,(.2+.8*SA.wasabi)*(1-.9*SA.mix)));bl.position.set(DISH.x+.28,y,DISH.z-.14);
+ bl.visible=SA.wasabi>.02;bl.scale.setScalar(Math.max(.01,(.2+.8*SA.wasabi)*(1-.9*SA.mix)));bl.position.set(dish.position.x+.28,y+dish.position.y,dish.position.z-.14);
  if(chewT>0){chewT-=dt;if(chewT<=0)chewOv.classList.remove('show')}
  if(noteT>0){noteT-=dt;if(noteT<=0)eatNotice.classList.add('hidden')}
  upd()};
