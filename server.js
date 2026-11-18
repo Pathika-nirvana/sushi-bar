@@ -38,27 +38,53 @@ function normalizeRoomCode(input) {
   if(typeof input !== 'string')return '';
   return input.trim().normalize('NFC').toUpperCase();
 }
-function newRoom(code=roomCode()) { const room={code, members:new Map(), chef:null, stock:0, served:0, revision:0}; rooms.set(room.code,room); return room; }
+function newRoom(code=roomCode()) { const room={code, members:new Map(), chef:null, stock:0, ready:0, served:0, revision:0, cuts:[], progress:0, cutting:null, generation:0, nextCut:0, nextSeat:0}; rooms.set(room.code,room); return room; }
 function members(room) { return [...room.members.values()]; }
 function snapshot(room) {
-  return {type:'state', room:room.code, chef:room.chef, stock:room.stock, served:room.served, revision:room.revision,
-    users:members(room).map(u=>({id:u.id,name:u.name,color:u.color,eaten:u.eaten,seat:u.seat}))};
+  return {type:'state', room:room.code, chef:room.chef, stock:room.stock, served:room.ready, revision:room.revision,
+    generation:room.generation, cuts:room.cuts, cutting:room.cutting,
+    users:members(room).map(u=>({id:u.id,name:u.name,color:u.color,eaten:u.eaten,plate:u.plate,seat:u.seat}))};
 }
 function sync(room) { room.revision++; each(room, snapshot(room)); }
 function broadcastNotice(room, message) { each(room,{type:'notice',message}); }
 function plateStock(room, chefName) {
   if(room.stock<1)return 0;
-  const amount=room.stock;
-  room.served += amount;
+  const amount=room.stock, guests=members(room).sort((a,b)=>a.seat-b.seat);
+  // Each diner has their own plate. Never make everyone interact with one shared platter.
+  for(let i=0;i<amount;i++){
+    if(guests.length)guests[(room.nextSeat+i)%guests.length].plate++;
+    else room.ready++;
+  }
+  if(guests.length)room.nextSeat=(room.nextSeat+amount)%guests.length;
   room.stock=0;
-  broadcastNotice(room, `${chefName} 셰프가 참치 ${amount}점을 접시에 내놓았어요.`);
+  broadcastNotice(room, `${chefName} 셰프가 참치 ${amount}점을 손님들의 개별 접시에 내놓았어요.`);
   return amount;
 }
+function finishCut(room, id) {
+  const c=room.cutting;
+  if(!c || c.id!==id)return;
+  room.cuts.push(c.xb-c.xa);
+  room.progress=c.xb;
+  room.stock++;
+  room.cutting=null;
+  sync(room);
+}
+function resetTuna(room){
+  room.generation++;
+  room.progress=0;
+  room.cuts=[];
+  room.cutting=null;
+  each(room,{type:'cut-reset',generation:room.generation});
+}
+
 function leaveRoom(ws) {
   const u=connections.get(ws);
   if(!u || !u.room)return;
   const room=u.room;
+  if(room.cutting && room.chef===u.id)finishCut(room,room.cutting.id);
   if(room.chef===u.id){plateStock(room,u.name);room.chef=null;}
+  // Recover food from a disconnected diner's plate for later guests.
+  room.ready+=u.plate;u.plate=0;
   room.members.delete(ws);u.room=null;u.seat=null;
   if(!room.members.size) rooms.delete(room.code); else sync(room);
 }
@@ -82,12 +108,13 @@ function joinRoom(ws, m, create) {
   u.name=String(m.name||'손님').trim().slice(0,14)||'손님';
   u.color=/^#[0-9a-fA-F]{6}$/.test(m.color)?m.color:'#b68c67';
   u.room=room;
+  if(room.ready){u.plate+=Math.min(6,room.ready);room.ready-=Math.min(6,room.ready);}
   room.members.set(ws,u);
   send(ws,{type:'welcome',id:u.id,room:room.code,created});
   sync(room);
 }
 wss.on('connection', ws=>{
-  connections.set(ws,{id:crypto.randomUUID().slice(0,8),room:null,seat:null,name:'손님',color:'#b68c67',eaten:0,lastCut:0,lastChat:0});
+  connections.set(ws,{id:crypto.randomUUID().slice(0,8),room:null,seat:null,name:'손님',color:'#b68c67',plate:0,eaten:0,lastCut:0,lastChat:0});
   ws.on('message',raw=>{
     let m;try {m=JSON.parse(raw.toString());}catch{return;}
     if(!m || typeof m.type!=='string')return;
@@ -113,19 +140,31 @@ wss.on('connection', ws=>{
       return;
     }
     if(m.type==='release'){
-      if(room.chef===u.id){plateStock(room,u.name);room.chef=null;sync(room);}
+      if(room.chef===u.id){if(room.cutting)return err(ws,'칼질이 끝난 뒤 역할을 넘겨 줘.');plateStock(room,u.name);room.chef=null;sync(room);}
       return;
     }
-    if(m.type==='cut'){
-      if(room.chef!==u.id) return err(ws,'셰프만 썰 수 있어요.');
-      const now=Date.now();if(now-u.lastCut<180)return;
-      u.lastCut=now;
-      if(room.stock>=40)return err(ws,'이번 참치는 접시에 내놓거나 새 참치로 교체해 주세요.');
-      room.stock++;sync(room);
+    if(m.type==='slice'){
+      if(room.chef!==u.id)return err(ws,'셰프만 참치를 썰 수 있어요.');
+      if(room.cutting)return err(ws,'칼질이 끝난 다음 썰어 주세요.');
+      if(room.stock>=40)return err(ws,'참치를 접시에 내놓거나 새 참치로 준비해 주세요.');
+      const remaining=3.2-room.progress;
+      if(remaining<.03)return err(ws,'참치를 다 썰었어요. 새 참치 준비를 눌러 줘.');
+      const thickness=Math.min(remaining,Math.max(.12,Math.min(.45,Number(m.thickness)||.22)));
+      const speed=Math.max(.5,Math.min(2,Number(m.speed)||1));
+      const now=Date.now(),id=++room.nextCut;
+      const cut={id,xa:room.progress,xb:room.progress+thickness,speed,started:now};
+      room.cutting=cut;
+      // Broadcast the ACTUAL knife animation, not just the finished slice count.
+      each(room,{type:'cut-animation',cut});
+      sync(room);
+      setTimeout(()=>{if(rooms.get(room.code)===room)finishCut(room,id)},Math.ceil(2150/speed));
       return;
     }
+    // Older clients must not be able to fabricate prepared sashimi.
+    if(m.type==='cut')return err(ws,'클라이언트를 최신 버전으로 업데이트해 주세요.');
     if(m.type==='serve'){
       if(room.chef!==u.id) return err(ws,'셰프만 접시에 낼 수 있어요.');
+      if(room.cutting)return err(ws,'칼질이 끝난 뒤 접시에 내놓아 줘.');
       plateStock(room,u.name);
       send(ws,{type:'serve-ok'});
       sync(room);
@@ -133,15 +172,21 @@ wss.on('connection', ws=>{
     }
     if(m.type==='reset'){
       if(room.chef!==u.id) return err(ws,'새 참치는 셰프만 준비할 수 있어요.');
-      // Resetting a physical tuna block never destroys plated food.
+      if(room.cutting)return err(ws,'칼질이 끝난 다음 새 참치를 준비할 수 있어요.');
+      // Physical tuna resets independently from each diner's private plate.
       plateStock(room,u.name);
+      resetTuna(room);
       send(ws,{type:'reset-ok'});
       sync(room);
       return;
     }
+    if(m.type==='take'){
+      if(room.ready<1)return err(ws,'남아 있는 예비 참치가 없어요.');
+      const n=Math.min(6,room.ready);room.ready-=n;u.plate+=n;sync(room);return;
+    }
     if(m.type==='eat'){
-      if(room.served<=0) return err(ws,'접시에 남은 참치가 없어요.');
-      room.served--;u.eaten++;
+      if(u.plate<=0) return err(ws,'내 접시에 남은 참치가 없어요.');
+      u.plate--;u.eaten++;
       sync(room);
       return;
     }

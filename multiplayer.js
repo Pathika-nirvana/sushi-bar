@@ -29,7 +29,8 @@
     $('mpCount').textContent=users.length+'/8';
     $('mpDot').classList.toggle('ok',joined&&connected);
     $('mpStatus').textContent=joined?'접속됨':connected?'방 선택':'연결 대기';
-    $('mpRoleText').textContent=MP.isChef?`셰프 · 준비 중 ${MP.stock}점 · 접시 ${MP.served}점`:`${chef?(users.find(u=>u.id===chef)?.name||'셰프')+' 조리 중':'셰프 자리 비어 있음'} · 접시 ${MP.served}점`;
+    $('mpRoleText').textContent=MP.isChef?`셰프 · 준비 중 ${MP.stock}점 · 내 접시 ${MP.served}점`:`${chef?(users.find(u=>u.id===chef)?.name||'셰프')+' 조리 중':'셰프 자리 비어 있음'} · 내 접시 ${MP.served}점`;
+    $('mpTake').style.display=joined&&MP.ready>0?'':'none';
     $('mpClaim').style.display=joined&&!chef?'':'none';
     $('mpClaim').disabled=!joined;
     $('mpRelease').style.display=MP.isChef?'':'none';
@@ -51,6 +52,7 @@
       avatar.textContent=u.name.slice(0,1);
       const label=document.createElement('span');label.textContent=u.name+(u.id===self?' (나)':'');
       row.append(avatar,label);
+      if(u.plate>0){const food=document.createElement('span');food.className='mpChef';food.textContent=`${u.plate}점`;row.append(food);}
       if(u.id===chef){const badge=document.createElement('span');badge.className='mpChef';badge.textContent='셰프';row.append(badge);}
       list.append(row);
     });
@@ -70,12 +72,21 @@
     }
     if(m.type==='state'){
       if(m.room!==roomCode)return;
-      chef=m.chef;users=m.users;MP.stock=m.stock;MP.served=m.served;MP.room=m.room;
+      chef=m.chef;users=m.users;MP.stock=m.stock;MP.ready=m.served;MP.served=(users.find(u=>u.id===self)||{}).plate||0;MP.room=m.room;MP.cutState=m;
       render();
+      if(typeof MP.onCutState==='function')MP.onCutState(m);
       if(typeof MP.reconcile==='function')MP.reconcile();
       if(MP.wantDining && MP.served>0 && typeof MP.enterDining==='function'){
         MP.wantDining=false;MP.enterDining();
       }
+      return;
+    }
+    if(m.type==='cut-animation'){
+      if(typeof MP.playCut==='function')MP.playCut(m.cut);
+      return;
+    }
+    if(m.type==='cut-reset'){
+      if(typeof MP.onCutReset==='function')MP.onCutReset(m.generation);
       return;
     }
     if(m.type==='serve-ok'){
@@ -90,6 +101,7 @@
     if(m.type==='chat'){log(m.name,m.message);return;}
     if(m.type==='notice'){log('스시집',m.message);return;}
     if(m.type==='error'){
+      if(typeof MP.onCutError==='function')MP.onCutError();
       MP.wantDining=false;
       MP.toast(m.message);
       if(!joined){$('mpSetup').style.display='grid';$('mpLobbyError').textContent=m.message;}
@@ -112,7 +124,7 @@
     ws.onmessage=onMessage;
     ws.onerror=()=>MP.toast('서버 연결을 확인해 주세요.');
     ws.onclose=()=>{
-      connected=false;joined=false;self=null;chef=null;roomCode='';users=[];MP.isChef=false;MP.users=[];MP.stock=0;MP.served=0;MP.wantDining=false;
+      connected=false;joined=false;self=null;chef=null;roomCode='';users=[];MP.isChef=false;MP.users=[];MP.stock=0;MP.served=0;MP.ready=0;MP.wantDining=false;MP.cutState=null;
       render();$('mpSetup').style.display='grid';$('mpLobbyError').textContent='연결이 끊어졌어요. 방 코드를 입력해 다시 입장해 주세요.';
       log('시스템','서버 연결이 종료되었어요.');
     };
@@ -147,6 +159,7 @@
   $('mpClaim').onclick=()=>MP.send({type:'claim'});
   $('mpRelease').onclick=()=>MP.send({type:'release'});
   $('mpServe').onclick=()=>MP.send({type:'serve'});
+  $('mpTake').onclick=()=>MP.send({type:'take'});
   $('mpSend').onsubmit=e=>{
     e.preventDefault();const input=$('mpInput'),message=input.value.trim();
     if(message)MP.send({type:'chat',message});input.value='';
